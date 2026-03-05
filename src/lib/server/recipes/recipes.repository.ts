@@ -6,6 +6,7 @@ import type {
   Recipe,
   UpdateRecipeInput
 } from "@/src/apps/recipes/recipes.types";
+import { decodeRecipesCursor, encodeRecipesCursor } from "@/src/lib/server/recipes/recipes.utils";
 
 const recipes = new Map<string, Recipe>();
 
@@ -20,7 +21,7 @@ export async function createRecipe(userId: string, input: CreateRecipeInput): Pr
     ingredientsText: input.ingredientsText.trim(),
     stepsText: input.stepsText.trim(),
     summarySource: input.summarySource,
-    aiConfidence: null,
+    aiConfidence: input.aiConfidence ?? null,
     createdAt: now,
     updatedAt: now
   };
@@ -31,14 +32,42 @@ export async function createRecipe(userId: string, input: CreateRecipeInput): Pr
 
 export async function listRecipes(userId: string, query: ListRecipesQuery): Promise<PaginatedRecipes> {
   const needle = query.q?.toLowerCase();
+  const cursor = query.cursor ? decodeRecipesCursor(query.cursor) : null;
 
-  const items = [...recipes.values()]
+  const sorted = [...recipes.values()]
     .filter((recipe) => recipe.userId === userId)
     .filter((recipe) => (needle ? recipe.title.toLowerCase().includes(needle) : true))
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-    .slice(0, query.limit);
+    .sort((a, b) => {
+      if (a.createdAt === b.createdAt) {
+        return a.id < b.id ? 1 : -1;
+      }
 
-  return { items };
+      return a.createdAt < b.createdAt ? 1 : -1;
+    });
+
+  const filtered = cursor
+    ? sorted.filter((recipe) => {
+        if (recipe.createdAt < cursor.createdAt) {
+          return true;
+        }
+
+        if (recipe.createdAt === cursor.createdAt && recipe.id < cursor.id) {
+          return true;
+        }
+
+        return false;
+      })
+    : sorted;
+
+  const window = filtered.slice(0, query.limit + 1);
+  const hasMore = window.length > query.limit;
+  const items = hasMore ? window.slice(0, query.limit) : window;
+  const tail = items[items.length - 1];
+
+  return {
+    items,
+    nextCursor: hasMore && tail ? encodeRecipesCursor({ createdAt: tail.createdAt, id: tail.id }) : undefined
+  };
 }
 
 export async function getRecipeById(userId: string, id: string): Promise<Recipe | null> {

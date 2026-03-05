@@ -10,7 +10,7 @@ import {
 import { ApiError, toErrorResponse } from "@/src/lib/utils/api-error";
 
 const idSchema = z.object({
-  id: z.string().uuid().or(z.string().min(1))
+  id: z.string().uuid()
 });
 
 export async function GET(

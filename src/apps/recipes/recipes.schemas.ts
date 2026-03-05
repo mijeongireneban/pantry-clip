@@ -14,7 +14,8 @@ export const createRecipeSchema = z.object({
   title: z.string().trim().min(1).max(140),
   ingredientsText: z.string().trim().min(1),
   stepsText: z.string().trim().min(1),
-  summarySource: summarySourceSchema
+  summarySource: summarySourceSchema,
+  aiConfidence: z.number().min(0).max(1).nullable().optional()
 });
 
 export const summarizeRecipeSchema = z.object({
