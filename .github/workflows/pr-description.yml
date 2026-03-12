@@ -127,14 +127,39 @@ jobs:
             }
 
             const payload = await response.json();
-            const generated = (payload.output || [])
-              .flatMap((item) => item.content || [])
-              .filter((item) => item.type === "output_text")
-              .map((item) => item.text)
-              .join("\n")
-              .trim();
+            const generatedFromTopLevel =
+              typeof payload.output_text === "string" ? payload.output_text.trim() : "";
+
+            const generatedFromOutput = Array.isArray(payload.output)
+              ? payload.output
+                  .flatMap((item) => {
+                    if (Array.isArray(item.content)) {
+                      return item.content;
+                    }
+
+                    if (typeof item.text === "string") {
+                      return [{ type: "output_text", text: item.text }];
+                    }
+
+                    return [];
+                  })
+                  .filter((item) => item.type === "output_text" && typeof item.text === "string")
+                  .map((item) => item.text)
+                  .join("\n")
+                  .trim()
+              : "";
+
+            const generated = generatedFromTopLevel || generatedFromOutput;
 
             if (!generated) {
+              const diagnostic = {
+                id: payload.id,
+                status: payload.status,
+                incomplete_details: payload.incomplete_details,
+                error: payload.error,
+                output_preview: Array.isArray(payload.output) ? payload.output.slice(0, 3) : payload.output,
+              };
+              core.info(JSON.stringify(diagnostic, null, 2));
               core.setFailed("OpenAI API returned an empty PR description.");
               return;
             }
