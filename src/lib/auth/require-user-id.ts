@@ -1,6 +1,6 @@
-import { ApiError } from "@/src/lib/utils/api-error";
-import { prisma } from "@/src/lib/server/prisma";
 import { getSupabaseServerClient } from "@/src/lib/auth/supabase-server";
+import { prisma } from "@/src/lib/server/prisma";
+import { ApiError } from "@/src/lib/utils/api-error";
 
 export async function requireUserId(): Promise<string> {
   const supabase = await getSupabaseServerClient();
