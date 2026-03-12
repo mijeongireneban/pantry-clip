@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SourceType {
+  youtube_shorts
+  instagram_reels
+  other
+
+  @@map("source_type")
+}
+
+enum SummarySource {
+  manual
+  ai
+
+  @@map("summary_source")
+}
+
+model User {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email     String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  recipes   Recipe[]
+
+  @@map("users")
+}
+
+model Recipe {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String        @map("user_id") @db.Uuid
+  sourceUrl       String        @map("source_url")
+  sourceType      SourceType    @map("source_type")
+  title           String        @db.VarChar(140)
+  ingredientsText String        @map("ingredients_text")
+  stepsText       String        @map("steps_text")
+  summarySource   SummarySource @map("summary_source")
+  aiConfidence    Float?        @map("ai_confidence")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)], map: "idx_recipes_user_created_id_desc")
+  @@index([userId, title], map: "idx_recipes_user_title")
+  @@map("recipes")
+}

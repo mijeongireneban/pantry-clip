@@ -1,12 +1,28 @@
 import { ApiError } from "@/src/lib/utils/api-error";
+import { prisma } from "@/src/lib/server/prisma";
+import { getSupabaseServerClient } from "@/src/lib/auth/supabase-server";
 
-// Temporary auth stub. Replace with real Supabase session extraction.
 export async function requireUserId(): Promise<string> {
-  const userId = process.env.DEV_USER_ID ?? "dev-user-id";
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+    error
+  } = await supabase.auth.getUser();
 
-  if (!userId) {
+  if (error || !user) {
     throw new ApiError("UNAUTHORIZED", "Authentication required", 401);
   }
 
-  return userId;
+  await prisma.user.upsert({
+    where: { id: user.id },
+    update: {
+      email: user.email ?? `${user.id}@users.pantryclip.local`
+    },
+    create: {
+      id: user.id,
+      email: user.email ?? `${user.id}@users.pantryclip.local`
+    }
+  });
+
+  return user.id;
 }
