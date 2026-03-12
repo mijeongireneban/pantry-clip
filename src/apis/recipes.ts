@@ -1,4 +1,32 @@
-import type { SummarizeRecipeRequest, SummarizeRecipeResponse } from "@/src/apis/@types/recipes";
+import type {
+  CreateRecipeRequest,
+  DeleteRecipeResponse,
+  ListRecipesRequest,
+  ListRecipesResponse,
+  RecipeDto,
+  SummarizeRecipeRequest,
+  SummarizeRecipeResponse,
+  UpdateRecipeRequest
+} from "@/src/apis/@types/recipes";
+
+function toQueryString(query: ListRecipesRequest) {
+  const params = new URLSearchParams();
+
+  if (query.q) {
+    params.set("q", query.q);
+  }
+
+  if (query.limit) {
+    params.set("limit", String(query.limit));
+  }
+
+  if (query.cursor) {
+    params.set("cursor", query.cursor);
+  }
+
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
 
 export async function summarizeRecipe(payload: SummarizeRecipeRequest) {
   const response = await fetch("/api/recipes/summarize", {
@@ -12,4 +40,64 @@ export async function summarizeRecipe(payload: SummarizeRecipeRequest) {
   }
 
   return (await response.json()) as SummarizeRecipeResponse;
+}
+
+export async function createRecipe(payload: CreateRecipeRequest) {
+  const response = await fetch("/api/recipes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to create recipe.");
+  }
+
+  return (await response.json()) as RecipeDto;
+}
+
+export async function listRecipes(query: ListRecipesRequest = {}) {
+  const response = await fetch(`/api/recipes${toQueryString(query)}`);
+
+  if (!response.ok) {
+    throw new Error("Failed to load recipes.");
+  }
+
+  return (await response.json()) as ListRecipesResponse;
+}
+
+export async function getRecipeById(id: string) {
+  const response = await fetch(`/api/recipes/${id}`);
+
+  if (!response.ok) {
+    throw new Error("Failed to load recipe.");
+  }
+
+  return (await response.json()) as RecipeDto;
+}
+
+export async function updateRecipe(id: string, payload: UpdateRecipeRequest) {
+  const response = await fetch(`/api/recipes/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to update recipe.");
+  }
+
+  return (await response.json()) as RecipeDto;
+}
+
+export async function deleteRecipe(id: string) {
+  const response = await fetch(`/api/recipes/${id}`, {
+    method: "DELETE"
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to delete recipe.");
+  }
+
+  return (await response.json()) as DeleteRecipeResponse;
 }

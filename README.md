@@ -22,6 +22,13 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+## API docs (Swagger UI)
+
+After starting the app, open:
+
+- `http://localhost:3000/api-docs` for interactive Swagger UI
+- `http://localhost:3000/api/openapi` for raw OpenAPI JSON
+
 ## Current status
 
 - API route stubs are implemented for:

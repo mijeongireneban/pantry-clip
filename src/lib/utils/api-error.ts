@@ -1,3 +1,5 @@
+import { ZodError } from "zod";
+
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -10,6 +12,17 @@ export class ApiError extends Error {
 }
 
 export function toErrorResponse(error: unknown) {
+  if (error instanceof ZodError) {
+    return {
+      status: 400,
+      body: {
+        code: "VALIDATION_ERROR",
+        message: "Invalid request",
+        details: error.flatten()
+      }
+    };
+  }
+
   if (error instanceof ApiError) {
     return {
       status: error.status,

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { Prisma, SourceType as PrismaSourceType, SummarySource as PrismaSummarySource } from "@prisma/client";
 import type {
   CreateRecipeInput,
   ListRecipesQuery,
@@ -6,44 +6,110 @@ import type {
   Recipe,
   UpdateRecipeInput
 } from "@/src/apps/recipes/recipes.types";
+import { decodeRecipesCursor, encodeRecipesCursor } from "@/src/lib/server/recipes/recipes.utils";
+import { prisma } from "@/src/lib/server/prisma";
 
-const recipes = new Map<string, Recipe>();
+function toRecipe(record: {
+  id: string;
+  userId: string;
+  sourceUrl: string;
+  sourceType: PrismaSourceType;
+  title: string;
+  ingredientsText: string;
+  stepsText: string;
+  summarySource: PrismaSummarySource;
+  aiConfidence: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): Recipe {
+  return {
+    id: record.id,
+    userId: record.userId,
+    sourceUrl: record.sourceUrl,
+    sourceType: record.sourceType,
+    title: record.title,
+    ingredientsText: record.ingredientsText,
+    stepsText: record.stepsText,
+    summarySource: record.summarySource,
+    aiConfidence: record.aiConfidence,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
 
 export async function createRecipe(userId: string, input: CreateRecipeInput): Promise<Recipe> {
-  const now = new Date().toISOString();
-  const recipe: Recipe = {
-    id: randomUUID(),
-    userId,
-    sourceUrl: input.sourceUrl.trim(),
-    sourceType: input.sourceType,
-    title: input.title.trim(),
-    ingredientsText: input.ingredientsText.trim(),
-    stepsText: input.stepsText.trim(),
-    summarySource: input.summarySource,
-    aiConfidence: null,
-    createdAt: now,
-    updatedAt: now
-  };
+  const recipe = await prisma.recipe.create({
+    data: {
+      userId,
+      sourceUrl: input.sourceUrl.trim(),
+      sourceType: input.sourceType,
+      title: input.title.trim(),
+      ingredientsText: input.ingredientsText.trim(),
+      stepsText: input.stepsText.trim(),
+      summarySource: input.summarySource,
+      aiConfidence: input.aiConfidence ?? null
+    }
+  });
 
-  recipes.set(recipe.id, recipe);
-  return recipe;
+  return toRecipe(recipe);
 }
 
 export async function listRecipes(userId: string, query: ListRecipesQuery): Promise<PaginatedRecipes> {
   const needle = query.q?.toLowerCase();
+  const cursor = query.cursor ? decodeRecipesCursor(query.cursor) : null;
+  const where: Prisma.RecipeWhereInput = {
+    userId,
+    ...(needle
+      ? {
+          title: {
+            contains: needle,
+            mode: "insensitive"
+          }
+        }
+      : {}),
+    ...(cursor
+      ? {
+          OR: [
+            {
+              createdAt: {
+                lt: new Date(cursor.createdAt)
+              }
+            },
+            {
+              createdAt: new Date(cursor.createdAt),
+              id: {
+                lt: cursor.id
+              }
+            }
+          ]
+        }
+      : {})
+  };
 
-  const items = [...recipes.values()]
-    .filter((recipe) => recipe.userId === userId)
-    .filter((recipe) => (needle ? recipe.title.toLowerCase().includes(needle) : true))
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-    .slice(0, query.limit);
+  const window = await prisma.recipe.findMany({
+    where,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: query.limit + 1
+  });
+  const hasMore = window.length > query.limit;
+  const items = (hasMore ? window.slice(0, query.limit) : window).map(toRecipe);
+  const tail = items[items.length - 1];
 
-  return { items };
+  return {
+    items,
+    nextCursor: hasMore && tail ? encodeRecipesCursor({ createdAt: tail.createdAt, id: tail.id }) : undefined
+  };
 }
 
 export async function getRecipeById(userId: string, id: string): Promise<Recipe | null> {
-  const recipe = recipes.get(id);
-  return recipe && recipe.userId === userId ? recipe : null;
+  const recipe = await prisma.recipe.findFirst({
+    where: {
+      id,
+      userId
+    }
+  });
+
+  return recipe ? toRecipe(recipe) : null;
 }
 
 export async function updateRecipe(
@@ -51,27 +117,45 @@ export async function updateRecipe(
   id: string,
   patch: UpdateRecipeInput
 ): Promise<Recipe | null> {
-  const current = recipes.get(id);
-  if (!current || current.userId !== userId) {
+  const current = await prisma.recipe.findFirst({
+    where: {
+      id,
+      userId
+    }
+  });
+
+  if (!current) {
     return null;
   }
 
-  const updated: Recipe = {
-    ...current,
-    ...patch,
-    updatedAt: new Date().toISOString()
-  };
+  const updated = await prisma.recipe.update({
+    where: { id },
+    data: {
+      ...(patch.sourceUrl !== undefined ? { sourceUrl: patch.sourceUrl.trim() } : {}),
+      ...(patch.sourceType !== undefined ? { sourceType: patch.sourceType } : {}),
+      ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
+      ...(patch.ingredientsText !== undefined ? { ingredientsText: patch.ingredientsText.trim() } : {}),
+      ...(patch.stepsText !== undefined ? { stepsText: patch.stepsText.trim() } : {}),
+      ...(patch.summarySource !== undefined ? { summarySource: patch.summarySource } : {}),
+      ...(patch.aiConfidence !== undefined ? { aiConfidence: patch.aiConfidence } : {}),
+      updatedAt: new Date()
+    }
+  });
 
-  recipes.set(id, updated);
-  return updated;
+  return toRecipe(updated);
 }
 
 export async function deleteRecipe(userId: string, id: string): Promise<boolean> {
-  const current = recipes.get(id);
-  if (!current || current.userId !== userId) {
+  const deleted = await prisma.recipe.deleteMany({
+    where: {
+      id,
+      userId
+    }
+  });
+
+  if (deleted.count === 0) {
     return false;
   }
 
-  recipes.delete(id);
   return true;
 }
