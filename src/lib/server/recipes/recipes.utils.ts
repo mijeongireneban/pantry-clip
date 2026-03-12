@@ -38,7 +38,7 @@ export function decodeRecipesCursor(encoded: string): RecipesCursor {
       createdAt: parsed.createdAt,
       id: parsed.id
     };
-  } catch (_error) {
+  } catch {
     throw new ApiError("VALIDATION_ERROR", "Invalid cursor", 400);
   }
 }
