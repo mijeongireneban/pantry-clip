@@ -18,12 +18,20 @@ concurrency:
 
 jobs:
   write-description:
-    if: ${{ !github.event.pull_request.draft && secrets.OPENAI_API_KEY != '' }}
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5-mini' }}
     steps:
+      - name: Validate configuration
+        uses: actions/github-script@v7
+        with:
+          script: |
+            if (!process.env.OPENAI_API_KEY) {
+              core.setFailed("Missing OPENAI_API_KEY repository secret.");
+            }
+
       - name: Generate PR description
         uses: actions/github-script@v7
         with:
