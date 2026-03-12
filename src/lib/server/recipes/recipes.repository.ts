@@ -1,4 +1,5 @@
 import { Prisma, SourceType as PrismaSourceType, SummarySource as PrismaSummarySource } from "@prisma/client";
+
 import type {
   CreateRecipeInput,
   ListRecipesQuery,
@@ -6,8 +7,8 @@ import type {
   Recipe,
   UpdateRecipeInput
 } from "@/src/apps/recipes/recipes.types";
-import { decodeRecipesCursor, encodeRecipesCursor } from "@/src/lib/server/recipes/recipes.utils";
 import { prisma } from "@/src/lib/server/prisma";
+import { decodeRecipesCursor, encodeRecipesCursor } from "@/src/lib/server/recipes/recipes.utils";
 
 function toRecipe(record: {
   id: string;
