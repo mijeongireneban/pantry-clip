@@ -8,19 +8,14 @@ export default function ApiDocsPage() {
         OpenAPI source: <code>/api/openapi</code>
       </p>
 
-      <link
-        rel="stylesheet"
-        href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"
-      />
-
       <div id="swagger-ui" className="rounded-lg border border-gray-200" />
 
       <Script
-        src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"
+        src="/api-docs/assets/swagger-ui-bundle.js"
         strategy="afterInteractive"
       />
       <Script
-        src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"
+        src="/api-docs/assets/swagger-ui-standalone-preset.js"
         strategy="afterInteractive"
       />
       <Script id="swagger-ui-init" strategy="afterInteractive">{`
