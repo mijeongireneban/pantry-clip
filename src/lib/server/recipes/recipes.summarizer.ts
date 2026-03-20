@@ -4,8 +4,6 @@ import { z } from "zod";
 import type { SummarizedRecipeDraft, SummarizeRecipeInput } from "@/src/apps/recipes/recipes.types";
 import { inferSourceType } from "@/src/lib/server/recipes/recipes.utils";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 const recipeDraftSchema = z.object({
   title: z.string(),
   ingredients: z.array(z.string()),
@@ -44,6 +42,7 @@ async function fetchPageMeta(url: string): Promise<{ title: string; description:
 export async function summarizeRecipeFromUrl(
   input: SummarizeRecipeInput
 ): Promise<SummarizedRecipeDraft> {
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const sourceType = inferSourceType(input.sourceUrl);
   const meta = await fetchPageMeta(input.sourceUrl);
 
