@@ -98,11 +98,11 @@ function validateDraft(draft: RecipeDraft) {
 }
 
 function toUpdatedAtLabel(updatedAt: string) {
-  return `Updated ${new Date(updatedAt).toLocaleDateString("en-US", {
+  return new Date(updatedAt).toLocaleDateString("ko-KR", {
     month: "short",
     day: "numeric",
     year: "numeric"
-  })}`;
+  });
 }
 
 function toRecipe(dto: RecipeDto): Recipe {
@@ -379,8 +379,8 @@ export function RecipesHomeContainer() {
   };
 
   return (
-    <main className="min-h-screen bg-background px-4 py-6 text-foreground md:px-6 md:py-8">
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-5xl flex-col justify-center space-y-6">
+    <main className="min-h-screen bg-background px-4 py-6 text-foreground md:px-6 md:py-10">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-5xl flex-col justify-center space-y-4 md:space-y-6">
         {screen === "auth" ? (
           <Card className="mx-auto max-w-md rounded-2xl p-6 md:p-8">
             <div className="space-y-2 text-center">
@@ -426,9 +426,9 @@ export function RecipesHomeContainer() {
         ) : null}
 
         {screen === "list" ? (
-          <Card className="rounded-2xl p-6 md:p-8">
+          <Card className="rounded-2xl p-4 md:p-8">
             <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-              <div className="space-y-4">
+              <div className="space-y-3 md:space-y-4">
                 <div className="rounded-2xl border border-border p-4 md:p-6">
                   <div className="space-y-4">
                   <div className="flex items-start justify-between gap-3">
@@ -494,7 +494,7 @@ export function RecipesHomeContainer() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-border p-4 md:p-6">
+              <div className="hidden rounded-2xl border border-border p-4 lg:block md:p-6">
                 {selectedRecipe ? (
                   <div className="space-y-6">
                     <div className="flex items-start justify-between gap-3">
@@ -633,7 +633,7 @@ export function RecipesHomeContainer() {
               </div>
             </Card>
 
-            <div className="rounded-2xl border border-border p-4 md:p-6">
+            <div className="hidden rounded-2xl border border-border p-4 lg:block md:p-6">
               <h2 className="font-semibold">Preview</h2>
               <div className="mt-4 space-y-4 text-sm">
                 <div>
