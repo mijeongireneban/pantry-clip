@@ -16,6 +16,13 @@ export type CreateRecipeInput = z.infer<typeof createRecipeSchema>;
 export type UpdateRecipeInput = z.infer<typeof updateRecipeSchema>;
 export type SummarizeRecipeInput = z.infer<typeof summarizeRecipeSchema>;
 export type ListRecipesQuery = z.infer<typeof listRecipesQuerySchema>;
+export type SummarizedRecipeDraft = {
+  sourceType: SourceType;
+  titleDraft: string;
+  ingredientsDraft: string;
+  stepsDraft: string;
+  confidence?: number;
+};
 
 export type Recipe = {
   id: string;

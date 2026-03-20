@@ -7,6 +7,7 @@ import {
   createRecipe as createRecipeRequest,
   deleteRecipe as deleteRecipeRequest,
   listRecipes as listRecipesRequest,
+  summarizeRecipe as summarizeRecipeRequest,
   updateRecipe as updateRecipeRequest
 } from "@/src/apis/recipes";
 import { useAuth } from "@/src/apps/app/auth.provider";
@@ -133,6 +134,7 @@ export function RecipesHomeContainer() {
   const [addUrl, setAddUrl] = useState("");
   const [urlError, setUrlError] = useState("");
   const [recipesError, setRecipesError] = useState("");
+  const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
   const [draftErrors, setDraftErrors] = useState<Partial<Record<keyof RecipeDraft, string>>>({});
   const [toastMessage, setToastMessage] = useState("");
   const [draft, setDraft] = useState<RecipeDraft>({
@@ -229,20 +231,26 @@ export function RecipesHomeContainer() {
     setUrlError("");
   };
 
-  const fillAiDraft = (sourceUrl: string) => {
+  const fillAiDraft = (
+    sourceUrl: string,
+    response: {
+      sourceType: SourceType;
+      titleDraft: string;
+      ingredientsDraft: string;
+      stepsDraft: string;
+    }
+  ) => {
     setDraft({
       sourceUrl,
-      sourceType: inferSourceType(sourceUrl),
-      title: "Spicy Tuna Mayo Rice Bowl",
-      ingredientsText:
-        "- 1 can tuna (drained)\n- 2 tbsp Japanese mayo\n- 1 tsp sriracha\n- 1 tsp soy sauce\n- 1 cup cooked rice",
-      stepsText:
-        "1. Mix tuna, mayo, sriracha, and soy sauce.\n2. Add warm rice to a bowl.\n3. Spoon the tuna mixture over the rice.",
+      sourceType: response.sourceType,
+      title: response.titleDraft,
+      ingredientsText: response.ingredientsDraft,
+      stepsText: response.stepsDraft,
       summarySource: "ai"
     });
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     const sourceUrl = addUrl.trim();
 
     if (!sourceUrl) {
@@ -255,33 +263,20 @@ export function RecipesHomeContainer() {
     }
 
     setUrlError("");
+    setIsGeneratingDraft(true);
     setScreen("loading");
 
-    window.setTimeout(() => {
-      if (sourceUrl.includes("fail")) {
-        setScreen("add");
-        setUrlError("AI draft failed. Retry or continue manually.");
-        return;
-      }
-
-      fillAiDraft(sourceUrl);
+    try {
+      const response = await summarizeRecipeRequest({ sourceUrl });
+      fillAiDraft(sourceUrl, response);
       setDraftErrors({});
       setScreen("review");
-    }, 1200);
-  };
-
-  const handleContinueManual = () => {
-    const sourceUrl = addUrl.trim();
-    setDraft({
-      sourceUrl,
-      sourceType: inferSourceType(sourceUrl),
-      title: "",
-      ingredientsText: "",
-      stepsText: "",
-      summarySource: "manual"
-    });
-    setDraftErrors({});
-    setScreen("review");
+    } catch (error) {
+      setScreen("add");
+      setUrlError(error instanceof Error ? error.message : "AI draft failed. Retry or continue manually.");
+    } finally {
+      setIsGeneratingDraft(false);
+    }
   };
 
   const handleSaveDraft = async () => {
@@ -554,7 +549,7 @@ export function RecipesHomeContainer() {
           <Card className="mx-auto max-w-2xl rounded-2xl p-6 md:p-8">
             <div className="space-y-2">
               <h1 className="text-2xl font-semibold tracking-tight">Add recipe</h1>
-              <p className="text-sm text-muted-foreground">Paste a video link to generate a draft or continue manually.</p>
+              <p className="text-sm text-muted-foreground">Paste a video link to generate a draft, then review and edit it before saving.</p>
             </div>
             <div className="mt-6 space-y-4">
               <div className="space-y-2">
@@ -562,14 +557,9 @@ export function RecipesHomeContainer() {
                 <Input className="h-11 rounded-xl" placeholder="https://www.youtube.com/shorts/..." value={addUrl} onChange={(event) => setAddUrl(event.target.value)} />
                 {urlError ? <p className="text-sm text-destructive">{urlError}</p> : null}
               </div>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button className="h-11 flex-1" onClick={handleGenerate} type="button">
-                  Generate with AI
-                </Button>
-                <Button className="h-11 flex-1" variant="outline" onClick={handleContinueManual} type="button">
-                  Continue manually
-                </Button>
-              </div>
+              <Button className="h-11 w-full" onClick={() => void handleGenerate()} type="button" disabled={isGeneratingDraft}>
+                {isGeneratingDraft ? "Generating..." : "Generate with AI"}
+              </Button>
               <Button className="h-11" variant="ghost" onClick={() => setScreen("list")} type="button">
                 Back to list
               </Button>

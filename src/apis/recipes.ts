@@ -1,4 +1,5 @@
 import type {
+  ApiErrorResponse,
   CreateRecipeRequest,
   DeleteRecipeResponse,
   ListRecipesRequest,
@@ -8,6 +9,15 @@ import type {
   SummarizeRecipeResponse,
   UpdateRecipeRequest
 } from "@/src/apis/@types/recipes";
+
+async function toErrorMessage(response: Response, fallbackMessage: string) {
+  try {
+    const error = (await response.json()) as ApiErrorResponse;
+    return error.message || fallbackMessage;
+  } catch {
+    return fallbackMessage;
+  }
+}
 
 function toQueryString(query: ListRecipesRequest) {
   const params = new URLSearchParams();
@@ -36,7 +46,7 @@ export async function summarizeRecipe(payload: SummarizeRecipeRequest) {
   });
 
   if (!response.ok) {
-    throw new Error("Failed to summarize recipe.");
+    throw new Error(await toErrorMessage(response, "Failed to summarize recipe."));
   }
 
   return (await response.json()) as SummarizeRecipeResponse;
@@ -50,7 +60,7 @@ export async function createRecipe(payload: CreateRecipeRequest) {
   });
 
   if (!response.ok) {
-    throw new Error("Failed to create recipe.");
+    throw new Error(await toErrorMessage(response, "Failed to create recipe."));
   }
 
   return (await response.json()) as RecipeDto;
@@ -60,7 +70,7 @@ export async function listRecipes(query: ListRecipesRequest = {}) {
   const response = await fetch(`/api/recipes${toQueryString(query)}`);
 
   if (!response.ok) {
-    throw new Error("Failed to load recipes.");
+    throw new Error(await toErrorMessage(response, "Failed to load recipes."));
   }
 
   return (await response.json()) as ListRecipesResponse;
@@ -70,7 +80,7 @@ export async function getRecipeById(id: string) {
   const response = await fetch(`/api/recipes/${id}`);
 
   if (!response.ok) {
-    throw new Error("Failed to load recipe.");
+    throw new Error(await toErrorMessage(response, "Failed to load recipe."));
   }
 
   return (await response.json()) as RecipeDto;
@@ -84,7 +94,7 @@ export async function updateRecipe(id: string, payload: UpdateRecipeRequest) {
   });
 
   if (!response.ok) {
-    throw new Error("Failed to update recipe.");
+    throw new Error(await toErrorMessage(response, "Failed to update recipe."));
   }
 
   return (await response.json()) as RecipeDto;
@@ -96,7 +106,7 @@ export async function deleteRecipe(id: string) {
   });
 
   if (!response.ok) {
-    throw new Error("Failed to delete recipe.");
+    throw new Error(await toErrorMessage(response, "Failed to delete recipe."));
   }
 
   return (await response.json()) as DeleteRecipeResponse;
