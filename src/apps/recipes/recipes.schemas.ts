@@ -28,7 +28,10 @@ export const listRecipesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20)
 });
 
-export const updateRecipeSchema = createRecipeSchema.partial().refine(
-  (value) => Object.keys(value).length > 0,
-  "At least one field must be provided."
-);
+export const updateRecipeSchema = createRecipeSchema
+  .extend({ isSaved: z.boolean().optional() })
+  .partial()
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "At least one field must be provided."
+  );

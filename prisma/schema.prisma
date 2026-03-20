@@ -42,6 +42,7 @@ model Recipe {
   stepsText       String        @map("steps_text")
   summarySource   SummarySource @map("summary_source")
   aiConfidence    Float?        @map("ai_confidence")
+  isSaved         Boolean       @default(false) @map("is_saved")
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
   user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)

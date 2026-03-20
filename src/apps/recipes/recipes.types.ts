@@ -34,6 +34,7 @@ export type Recipe = {
   stepsText: string;
   summarySource: SummarySource;
   aiConfidence: number | null;
+  isSaved: boolean;
   createdAt: string;
   updatedAt: string;
 };

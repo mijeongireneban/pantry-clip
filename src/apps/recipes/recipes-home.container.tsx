@@ -8,18 +8,21 @@ import {
   deleteRecipe as deleteRecipeRequest,
   listRecipes as listRecipesRequest,
   summarizeRecipe as summarizeRecipeRequest,
+  toggleSaveRecipe as toggleSaveRecipeRequest,
   updateRecipe as updateRecipeRequest
 } from "@/src/apis/recipes";
 import { useAuth } from "@/src/apps/app/auth.provider";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
+import { Skeleton } from "@/src/components/ui/skeleton";
 import { Textarea } from "@/src/components/ui/textarea";
 
-// ---------- Types ----------
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 type SourceType = "youtube_shorts" | "instagram_reels" | "other";
 type SummarySource = "manual" | "ai";
+// "add" now handles inline draft review. "review" is manual/write-text entry only.
 type Screen = "auth" | "list" | "add" | "review" | "detail" | "edit" | "scrap" | "profile";
 type Tab = "library" | "add" | "scrap" | "profile";
 
@@ -31,6 +34,7 @@ type Recipe = {
   ingredientsText: string;
   stepsText: string;
   summarySource: SummarySource;
+  isSaved: boolean;
   updatedAtLabel: string;
 };
 
@@ -43,10 +47,10 @@ type RecipeDraft = {
   summarySource: SummarySource;
 };
 
-// ---------- Helpers ----------
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function inferSourceType(sourceUrl: string): SourceType {
-  const n = sourceUrl.toLowerCase();
+function inferSourceType(url: string): SourceType {
+  const n = url.toLowerCase();
   if (n.includes("youtube.com/shorts") || n.includes("youtu.be/")) return "youtube_shorts";
   if (n.includes("instagram.com/reel")) return "instagram_reels";
   return "other";
@@ -59,17 +63,11 @@ function sourceBadgeLabel(t: SourceType) {
 }
 
 function toIngredientItems(text: string) {
-  return text
-    .split("\n")
-    .map((l) => l.replace(/^-+\s*/, "").trim())
-    .filter(Boolean);
+  return text.split("\n").map((l) => l.replace(/^-+\s*/, "").trim()).filter(Boolean);
 }
 
 function toStepItems(text: string) {
-  return text
-    .split("\n")
-    .map((l) => l.replace(/^\d+\.\s*/, "").trim())
-    .filter(Boolean);
+  return text.split("\n").map((l) => l.replace(/^\d+\.\s*/, "").trim()).filter(Boolean);
 }
 
 function validateDraft(d: RecipeDraft) {
@@ -82,11 +80,7 @@ function validateDraft(d: RecipeDraft) {
 }
 
 function toUpdatedAtLabel(updatedAt: string) {
-  return new Date(updatedAt).toLocaleDateString("ko-KR", {
-    year: "numeric",
-    month: "short",
-    day: "numeric"
-  });
+  return new Date(updatedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" });
 }
 
 function toRecipe(dto: RecipeDto): Recipe {
@@ -98,196 +92,286 @@ function toRecipe(dto: RecipeDto): Recipe {
     ingredientsText: dto.ingredientsText,
     stepsText: dto.stepsText,
     summarySource: dto.summarySource,
+    isSaved: dto.isSaved,
     updatedAtLabel: toUpdatedAtLabel(dto.updatedAt)
   };
 }
 
-// ---------- Icons ----------
+// ─── SVG Icons ───────────────────────────────────────────────────────────────
 
-function IcBook({ className }: { className?: string }) {
+const IcBook = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+  </svg>
+);
+const IcSearch = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+  </svg>
+);
+const IcBell = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+  </svg>
+);
+const IcSettings = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  </svg>
+);
+const IcLink = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+  </svg>
+);
+const IcBolt = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+);
+const IcPen = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+  </svg>
+);
+const IcCamera = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+    <circle cx="12" cy="13" r="4"/>
+  </svg>
+);
+const IcLeft = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="15 18 9 12 15 6"/>
+  </svg>
+);
+const IcShare = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+  </svg>
+);
+const IcBookmark = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+  </svg>
+);
+const IcPlus = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+  </svg>
+);
+const IcUser = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+  </svg>
+);
+const IcMail = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+    <polyline points="22,6 12,13 2,6"/>
+  </svg>
+);
+const IcLock = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+  </svg>
+);
+const IcEye = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+  </svg>
+);
+const IcEyeOff = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+    <line x1="1" y1="1" x2="23" y2="23"/>
+  </svg>
+);
+const IcArrow = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+  </svg>
+);
+const IcUtensils = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/>
+    <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>
+  </svg>
+);
+const IcDot = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 8 8" fill="currentColor"><circle cx="4" cy="4" r="3"/></svg>
+);
+const IcYouTube = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8zM9.75 15.5v-7l6.5 3.5-6.5 3.5z"/>
+  </svg>
+);
+const IcInstagram = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/>
+  </svg>
+);
+
+// ─── List editors ────────────────────────────────────────────────────────────
+
+function IngredientListEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const items = value.split("\n").map((l) => l.replace(/^-+\s*/, "").trim());
+  const list = items.length > 0 ? items : [""];
+
+  // Serialize: keep empty rows while editing, only strip on save (validateDraft handles that)
+  const serialize = (rows: string[]) => rows.map((i) => `- ${i}`).join("\n");
+
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-    </svg>
+    <div className="space-y-2">
+      {list.map((item, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="text-sm font-bold text-primary">–</span>
+          <input
+            className="h-10 flex-1 rounded-lg border-0 bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            value={item}
+            placeholder={`재료 ${i + 1}`}
+            onChange={(e) => {
+              const next = [...list];
+              next[i] = e.target.value;
+              onChange(serialize(next));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                const next = [...list];
+                next.splice(i + 1, 0, "");
+                onChange(serialize(next));
+              }
+              if (e.key === "Backspace" && item === "" && list.length > 1) {
+                e.preventDefault();
+                const next = list.filter((_, j) => j !== i);
+                onChange(serialize(next));
+              }
+            }}
+          />
+          {list.length > 1 && (
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => onChange(serialize(list.filter((_, j) => j !== i)))}
+            >
+              <IcPlus className="h-4 w-4 rotate-45" />
+            </button>
+          )}
+        </div>
+      ))}
+      <button
+        type="button"
+        className="flex items-center gap-1.5 text-[11px] font-bold text-primary"
+        onClick={() => onChange(serialize([...list, ""]))}
+      >
+        <IcPlus className="h-3.5 w-3.5" /> Add ingredient
+      </button>
+    </div>
   );
 }
 
-function IcSearch({ className }: { className?: string }) {
+function StepListEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const items = value.split("\n").map((l) => l.replace(/^\d+\.\s*/, "").trim());
+  const list = items.length > 0 ? items : [""];
+
+  const serialize = (rows: string[]) => rows.map((s, i) => `${i + 1}. ${s}`).join("\n");
+
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="8" />
-      <line x1="21" y1="21" x2="16.65" y2="16.65" />
-    </svg>
+    <div className="space-y-2">
+      {list.map((step, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="mt-2.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+            {i + 1}
+          </span>
+          <textarea
+            className="min-h-[60px] flex-1 resize-none rounded-lg border-0 bg-card px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            value={step}
+            placeholder={`${i + 1}단계 설명`}
+            rows={2}
+            onChange={(e) => {
+              const next = [...list];
+              next[i] = e.target.value;
+              onChange(serialize(next));
+            }}
+          />
+          {list.length > 1 && (
+            <button
+              type="button"
+              className="mt-2 text-muted-foreground hover:text-destructive"
+              onClick={() => onChange(serialize(list.filter((_, j) => j !== i)))}
+            >
+              <IcPlus className="h-4 w-4 rotate-45" />
+            </button>
+          )}
+        </div>
+      ))}
+      <button
+        type="button"
+        className="flex items-center gap-1.5 text-[11px] font-bold text-primary"
+        onClick={() => onChange(serialize([...list, ""]))}
+      >
+        <IcPlus className="h-3.5 w-3.5" /> Add step
+      </button>
+    </div>
   );
 }
 
-function IcBell({ className }: { className?: string }) {
+// ─── Shared badge ────────────────────────────────────────────────────────────
+
+function SourceBadge({ sourceType, summarySource, overlay = false }: {
+  sourceType: SourceType;
+  summarySource?: SummarySource;
+  overlay?: boolean;
+}) {
+  const base = overlay
+    ? "flex items-center gap-1.5 rounded-full bg-black/50 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm"
+    : "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold";
+
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-    </svg>
+    <div className="flex items-center gap-1.5">
+      {sourceType === "youtube_shorts" && (
+        <span className={`${base} ${!overlay ? "bg-[#ff0000]/15 text-[#ff4444]" : ""}`}>
+          <IcYouTube className="h-3 w-3" />
+          YouTube
+        </span>
+      )}
+      {sourceType === "instagram_reels" && (
+        <span className={`${base} ${!overlay ? "bg-primary/15 text-primary" : ""}`}>
+          <IcInstagram className="h-3 w-3" />
+          Instagram
+        </span>
+      )}
+      {sourceType === "other" && (
+        <span className={`${base} ${!overlay ? "bg-muted text-muted-foreground" : ""}`}>
+          <IcLink className="h-3 w-3" />
+          Link
+        </span>
+      )}
+      {summarySource === "ai" && (
+        <span className={`${base} ${!overlay ? "bg-muted text-muted-foreground" : ""}`}>
+          <IcBolt className="h-3 w-3" />
+          AI
+        </span>
+      )}
+    </div>
   );
 }
 
-function IcSettings({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
-}
-
-function IcLink({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-    </svg>
-  );
-}
-
-function IcBolt({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-    </svg>
-  );
-}
-
-function IcPen({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-    </svg>
-  );
-}
-
-function IcCamera({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-      <circle cx="12" cy="13" r="4" />
-    </svg>
-  );
-}
-
-function IcLeft({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="15 18 9 12 15 6" />
-    </svg>
-  );
-}
-
-function IcShare({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="18" cy="5" r="3" />
-      <circle cx="6" cy="12" r="3" />
-      <circle cx="18" cy="19" r="3" />
-      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-    </svg>
-  );
-}
-
-function IcBookmark({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
-
-function IcPlus({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  );
-}
-
-function IcUser({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-      <circle cx="12" cy="7" r="4" />
-    </svg>
-  );
-}
-
-function IcMail({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-      <polyline points="22,6 12,13 2,6" />
-    </svg>
-  );
-}
-
-function IcLock({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
-  );
-}
-
-function IcEye({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-
-function IcEyeOff({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-      <line x1="1" y1="1" x2="23" y2="23" />
-    </svg>
-  );
-}
-
-function IcArrow({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="5" y1="12" x2="19" y2="12" />
-      <polyline points="12 5 19 12 12 19" />
-    </svg>
-  );
-}
-
-function IcUtensils({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
-      <path d="M7 2v20" />
-      <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
-    </svg>
-  );
-}
-
-// ---------- Small shared components ----------
+// ─── Small shared UI ─────────────────────────────────────────────────────────
 
 function Logo() {
   return (
     <div className="flex items-center gap-2">
       <IcBook className="h-5 w-5 text-primary" />
-      <span className="text-base font-bold tracking-tight text-primary">PantryClip</span>
+      <span className="text-[15px] font-bold tracking-tight text-primary">PantryClip</span>
     </div>
   );
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function Label({ children }: { children: React.ReactNode }) {
   return (
     <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
       {children}
@@ -295,72 +379,61 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function TopBar({
-  onBack,
-  right
-}: {
-  onBack?: () => void;
-  right?: React.ReactNode;
-}) {
+/** Gradient card used as image placeholder until real images are added */
+function ImgPlaceholder({ className }: { className?: string }) {
   return (
-    <div className="flex items-center justify-between px-5 py-4">
-      {onBack ? (
-        <button type="button" onClick={onBack} className="flex items-center gap-1 font-semibold text-primary">
-          <IcLeft className="h-5 w-5" />
-          <span className="text-sm">Recipe Details</span>
-        </button>
-      ) : (
-        <Logo />
-      )}
-      {right && <div className="flex items-center gap-3">{right}</div>}
+    <div className={`bg-gradient-to-br from-[oklch(0.28_0.02_48)] via-[oklch(0.22_0.01_260)] to-[oklch(0.18_0.005_260)] ${className ?? ""}`} />
+  );
+}
+
+function Divider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="h-px flex-1 bg-border" />
+      <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+      <div className="h-px flex-1 bg-border" />
     </div>
   );
 }
 
-function BottomNav({
-  activeTab,
-  onLibrary,
-  onAdd,
-  onScrap,
-  onProfile
-}: {
+function BottomNav({ activeTab, onLibrary, onAdd, onScrap, onProfile }: {
   activeTab: Tab;
   onLibrary: () => void;
   onAdd: () => void;
   onScrap: () => void;
   onProfile: () => void;
 }) {
-  const tabs: { id: Tab; label: string; icon: React.ReactNode; action: () => void }[] = [
-    { id: "library", label: "Library", icon: <IcBook className="h-5 w-5" />, action: onLibrary },
-    { id: "add", label: "Add", icon: <IcPlus className="h-5 w-5" />, action: onAdd },
-    { id: "scrap", label: "Scrap", icon: <IcBookmark className="h-5 w-5" />, action: onScrap },
-    { id: "profile", label: "Profile", icon: <IcUser className="h-5 w-5" />, action: onProfile }
+  const tabs = [
+    { id: "library" as Tab, label: "LIBRARY", icon: <IcBook className="h-[22px] w-[22px]" />,     action: onLibrary },
+    { id: "add"     as Tab, label: "ADD",      icon: <IcPlus className="h-[22px] w-[22px]" />,     action: onAdd     },
+    { id: "scrap"   as Tab, label: "SAVED",    icon: <IcBookmark className="h-[22px] w-[22px]" />, action: onScrap   },
+    { id: "profile" as Tab, label: "PROFILE",  icon: <IcUser className="h-[22px] w-[22px]" />,     action: onProfile },
   ];
-
   return (
-    <div className="flex items-end justify-around border-t border-border bg-card pb-safe px-2 pt-2">
+    <div className="mx-3 mb-3 flex items-center justify-around rounded-2xl bg-card px-1 py-2">
       {tabs.map((tab) => {
         const active = activeTab === tab.id;
         const isAdd = tab.id === "add";
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            className="flex flex-col items-center gap-1 px-4 py-1"
-            onClick={tab.action}
-          >
-            {isAdd ? (
-              <div
-                className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${active ? "bg-primary" : "bg-muted"}`}
-              >
-                <span className={active ? "text-primary-foreground" : "text-muted-foreground"}>{tab.icon}</span>
+
+        if (isAdd) {
+          return (
+            <button key={tab.id} type="button" onClick={tab.action} className="flex flex-col items-center gap-1 px-3 py-1">
+              <div className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${active ? "bg-primary/20 text-primary" : "text-muted-foreground"}`}>
+                <IcBolt className="h-[22px] w-[22px]" />
               </div>
-            ) : (
-              <span className={active ? "text-primary" : "text-muted-foreground"}>{tab.icon}</span>
-            )}
-            <span
-              className={`text-[9px] font-semibold uppercase tracking-widest transition-colors ${active ? "text-primary" : "text-muted-foreground"}`}
-            >
+              <span className={`text-[9px] font-bold tracking-widest ${active ? "text-primary" : "text-muted-foreground"}`}>
+                {tab.label}
+              </span>
+            </button>
+          );
+        }
+
+        return (
+          <button key={tab.id} type="button" onClick={tab.action} className="flex flex-col items-center gap-1 px-3 py-1">
+            <div className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${active ? "bg-primary/20 text-primary" : "text-muted-foreground"}`}>
+              {tab.icon}
+            </div>
+            <span className={`text-[9px] font-bold tracking-widest ${active ? "text-primary" : "text-muted-foreground"}`}>
               {tab.label}
             </span>
           </button>
@@ -370,51 +443,44 @@ function BottomNav({
   );
 }
 
-// ---------- Main container ----------
+// ─── Main ────────────────────────────────────────────────────────────────────
 
 export function RecipesHomeContainer() {
   const { isReady, session, signInWithPassword, signOut, signUpWithPassword } = useAuth();
-  const [screen, setScreen] = useState<Screen>("auth");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [screen, setScreen]                   = useState<Screen>("auth");
+  const [searchQuery, setSearchQuery]         = useState("");
+  const [recipes, setRecipes]                 = useState<Recipe[]>([]);
   const [selectedRecipeId, setSelectedRecipeId] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-  const [authError, setAuthError] = useState("");
-  const [authNotice, setAuthNotice] = useState("");
-  const [authMode, setAuthMode] = useState<"sign_in" | "sign_up">("sign_in");
-  const [authBusy, setAuthBusy] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [addUrl, setAddUrl] = useState("");
-  const [urlError, setUrlError] = useState("");
-  const [recipesError, setRecipesError] = useState("");
-  const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
-  const [draftErrors, setDraftErrors] = useState<Partial<Record<keyof RecipeDraft, string>>>({});
-  const [toastMessage, setToastMessage] = useState("");
-  const [draft, setDraft] = useState<RecipeDraft>({
-    sourceUrl: "",
-    sourceType: "other",
-    title: "",
-    ingredientsText: "",
-    stepsText: "",
-    summarySource: "ai"
+  const [authEmail, setAuthEmail]             = useState("");
+  const [authPassword, setAuthPassword]       = useState("");
+  const [authError, setAuthError]             = useState("");
+  const [authNotice, setAuthNotice]           = useState("");
+  const [authMode, setAuthMode]               = useState<"sign_in" | "sign_up">("sign_in");
+  const [authBusy, setAuthBusy]               = useState(false);
+  const [showPassword, setShowPassword]       = useState(false);
+  const [addUrl, setAddUrl]                   = useState("");
+  const [urlError, setUrlError]               = useState("");
+  const [recipesError, setRecipesError]       = useState("");
+  const [isGenerating, setIsGenerating]       = useState(false);
+  const [draftErrors, setDraftErrors]         = useState<Partial<Record<keyof RecipeDraft, string>>>({});
+  const [toastMessage, setToastMessage]       = useState("");
+  const [draft, setDraft]                     = useState<RecipeDraft>({
+    sourceUrl: "", sourceType: "other", title: "", ingredientsText: "", stepsText: "", summarySource: "ai"
   });
 
-  const selectedRecipe = useMemo(
-    () => recipes.find((r) => r.id === selectedRecipeId) ?? null,
-    [recipes, selectedRecipeId]
-  );
+  // Draft is "ready to review" when title is populated (AI finished or manual write)
+  const hasDraft = draft.title.trim() !== "";
 
+  const selectedRecipe = useMemo(() => recipes.find((r) => r.id === selectedRecipeId) ?? null, [recipes, selectedRecipeId]);
   const filteredRecipes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return recipes;
-    return recipes.filter((r) => r.title.toLowerCase().includes(q));
+    return q ? recipes.filter((r) => r.title.toLowerCase().includes(q)) : recipes;
   }, [recipes, searchQuery]);
 
   const activeTab = useMemo<Tab>(() => {
     if (["list", "detail", "edit"].includes(screen)) return "library";
-    if (["add"].includes(screen)) return "add";
+    if (["add", "review"].includes(screen)) return "add";
     if (screen === "scrap") return "scrap";
     if (screen === "profile") return "profile";
     return "library";
@@ -422,55 +488,28 @@ export function RecipesHomeContainer() {
 
   useEffect(() => {
     if (!isReady) return;
-    if (session) {
-      setScreen((cur) => (cur === "auth" ? "list" : cur));
-      return;
-    }
+    if (session) { setScreen((c) => c === "auth" ? "list" : c); return; }
     setScreen("auth");
   }, [isReady, session]);
 
   useEffect(() => {
-    if (!isReady || !session) {
-      setRecipes([]);
-      setSelectedRecipeId("");
-      return;
-    }
+    if (!isReady || !session) { setRecipes([]); setSelectedRecipeId(""); return; }
     void (async () => {
       try {
         setRecipesError("");
         const res = await listRecipesRequest();
         const items = res.items.map(toRecipe);
         setRecipes(items);
-        setSelectedRecipeId((cur) => cur || items[0]?.id || "");
+        setSelectedRecipeId((c) => c || items[0]?.id || "");
       } catch (err) {
-        setRecipesError(err instanceof Error ? err.message : "Failed to load recipes.");
+        setRecipesError(err instanceof Error ? err.message : "레시피를 불러오지 못했습니다.");
       }
     })();
   }, [isReady, session]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    window.setTimeout(() => setToastMessage(""), 2200);
-  };
-
-  const handleAuthSubmit = async () => {
-    setAuthError("");
-    setAuthNotice("");
-    setAuthBusy(true);
-    try {
-      if (authMode === "sign_up") {
-        await signUpWithPassword(authEmail.trim(), authPassword);
-        setAuthNotice("Account created. Check your email to confirm before signing in.");
-        setAuthPassword("");
-        return;
-      }
-      await signInWithPassword(authEmail.trim(), authPassword);
-      setScreen("list");
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : "Authentication failed.");
-    } finally {
-      setAuthBusy(false);
-    }
+    window.setTimeout(() => setToastMessage(""), 2400);
   };
 
   const resetDraft = () => {
@@ -480,45 +519,78 @@ export function RecipesHomeContainer() {
     setUrlError("");
   };
 
+  const handleAuthSubmit = async () => {
+    setAuthError(""); setAuthNotice(""); setAuthBusy(true);
+    try {
+      if (authMode === "sign_up") {
+        await signUpWithPassword(authEmail.trim(), authPassword);
+        setAuthNotice("계정이 생성되었습니다. 이메일을 확인하여 인증을 완료해주세요.");
+        setAuthPassword(""); return;
+      }
+      await signInWithPassword(authEmail.trim(), authPassword);
+      setScreen("list");
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : "인증에 실패했습니다.");
+    } finally { setAuthBusy(false); }
+  };
+
+  // AI generate — stays on "add" screen, draft appears inline
   const handleGenerate = async () => {
     const sourceUrl = addUrl.trim();
     if (!sourceUrl) { setUrlError("URL을 입력해주세요."); return; }
     if (!/^https?:\/\//i.test(sourceUrl)) { setUrlError("http:// 또는 https://로 시작하는 URL을 입력해주세요."); return; }
-    setUrlError("");
-    setIsGeneratingDraft(true);
+    setUrlError(""); setIsGenerating(true);
     try {
       const res = await summarizeRecipeRequest({ sourceUrl });
       setDraft({ sourceUrl, sourceType: res.sourceType, title: res.titleDraft, ingredientsText: res.ingredientsDraft, stepsText: res.stepsDraft, summarySource: "ai" });
       setDraftErrors({});
-      setScreen("review");
+      // Stay on "add" — draft section appears inline below
     } catch (err) {
-      setUrlError(err instanceof Error ? err.message : "AI 초안 생성에 실패했습니다. 다시 시도하거나 직접 입력해주세요.");
-    } finally {
-      setIsGeneratingDraft(false);
-    }
+      setUrlError(err instanceof Error ? err.message : "AI 초안 생성에 실패했습니다.");
+    } finally { setIsGenerating(false); }
   };
 
-  const handleSaveDraft = async () => {
+  // Save AI draft directly from inline review card
+  const handleSaveAiDraft = async () => {
     const errors = validateDraft(draft);
     setDraftErrors(errors);
     if (Object.keys(errors).length > 0) return;
     try {
       const created = await createRecipeRequest({
-        sourceUrl: draft.sourceUrl.trim(),
-        sourceType: draft.sourceType,
-        title: draft.title.trim(),
-        ingredientsText: draft.ingredientsText.trim(),
-        stepsText: draft.stepsText.trim(),
-        summarySource: draft.summarySource
+        sourceUrl: draft.sourceUrl.trim(), sourceType: draft.sourceType,
+        title: draft.title.trim(), ingredientsText: draft.ingredientsText.trim(),
+        stepsText: draft.stepsText.trim(), summarySource: draft.summarySource
       });
       const next = toRecipe(created);
-      setRecipes((cur) => [next, ...cur]);
+      setRecipes((c) => [next, ...c]);
       setSelectedRecipeId(next.id);
+      resetDraft();
       setScreen("detail");
       showToast("레시피가 저장되었습니다");
-      resetDraft();
     } catch (err) {
-      setDraftErrors((cur) => ({ ...cur, title: err instanceof Error ? err.message : "저장 실패" }));
+      setDraftErrors((c) => ({ ...c, title: err instanceof Error ? err.message : "저장 실패" }));
+    }
+  };
+
+  // Save manual entry (from "review" screen)
+  const handleSaveManual = async () => {
+    const errors = validateDraft(draft);
+    setDraftErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    try {
+      const created = await createRecipeRequest({
+        sourceUrl: draft.sourceUrl.trim(), sourceType: draft.sourceType,
+        title: draft.title.trim(), ingredientsText: draft.ingredientsText.trim(),
+        stepsText: draft.stepsText.trim(), summarySource: draft.summarySource
+      });
+      const next = toRecipe(created);
+      setRecipes((c) => [next, ...c]);
+      setSelectedRecipeId(next.id);
+      resetDraft();
+      setScreen("detail");
+      showToast("레시피가 저장되었습니다");
+    } catch (err) {
+      setDraftErrors((c) => ({ ...c, title: err instanceof Error ? err.message : "저장 실패" }));
     }
   };
 
@@ -528,33 +600,38 @@ export function RecipesHomeContainer() {
     if (Object.keys(errors).length > 0 || !selectedRecipe) return;
     try {
       const updated = await updateRecipeRequest(selectedRecipe.id, {
-        sourceUrl: draft.sourceUrl.trim(),
-        sourceType: draft.sourceType,
-        title: draft.title.trim(),
-        ingredientsText: draft.ingredientsText.trim(),
-        stepsText: draft.stepsText.trim(),
-        summarySource: draft.summarySource
+        sourceUrl: draft.sourceUrl.trim(), sourceType: draft.sourceType,
+        title: draft.title.trim(), ingredientsText: draft.ingredientsText.trim(),
+        stepsText: draft.stepsText.trim(), summarySource: draft.summarySource
       });
       const next = toRecipe(updated);
-      setRecipes((cur) => cur.map((r) => (r.id === selectedRecipe.id ? next : r)));
+      setRecipes((c) => c.map((r) => r.id === selectedRecipe.id ? next : r));
       setSelectedRecipeId(next.id);
       setScreen("detail");
       showToast("레시피가 수정되었습니다");
     } catch (err) {
-      setDraftErrors((cur) => ({ ...cur, title: err instanceof Error ? err.message : "수정 실패" }));
+      setDraftErrors((c) => ({ ...c, title: err instanceof Error ? err.message : "수정 실패" }));
+    }
+  };
+
+  const handleToggleSave = async () => {
+    if (!selectedRecipe) return;
+    const next = !selectedRecipe.isSaved;
+    // Optimistic update
+    setRecipes((c) => c.map((r) => r.id === selectedRecipe.id ? { ...r, isSaved: next } : r));
+    try {
+      const updated = await toggleSaveRecipeRequest(selectedRecipe.id, next);
+      setRecipes((c) => c.map((r) => r.id === selectedRecipe.id ? toRecipe(updated) : r));
+      showToast(next ? "저장됨" : "저장 해제됨");
+    } catch {
+      // Rollback
+      setRecipes((c) => c.map((r) => r.id === selectedRecipe.id ? { ...r, isSaved: !next } : r));
     }
   };
 
   const openEdit = () => {
     if (!selectedRecipe) return;
-    setDraft({
-      sourceUrl: selectedRecipe.sourceUrl,
-      sourceType: selectedRecipe.sourceType,
-      title: selectedRecipe.title,
-      ingredientsText: selectedRecipe.ingredientsText,
-      stepsText: selectedRecipe.stepsText,
-      summarySource: selectedRecipe.summarySource
-    });
+    setDraft({ sourceUrl: selectedRecipe.sourceUrl, sourceType: selectedRecipe.sourceType, title: selectedRecipe.title, ingredientsText: selectedRecipe.ingredientsText, stepsText: selectedRecipe.stepsText, summarySource: selectedRecipe.summarySource });
     setDraftErrors({});
     setScreen("edit");
   };
@@ -575,105 +652,118 @@ export function RecipesHomeContainer() {
     }
   };
 
-  const showBottomNav = !!session && screen !== "auth";
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  if (!isReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[oklch(0.13_0.003_308)]">
+        <div className="flex flex-col items-center gap-3">
+          <IcBook className="h-8 w-8 text-primary" />
+          <div className="h-1 w-24 overflow-hidden rounded-full bg-muted">
+            <div className="h-full animate-pulse rounded-full bg-primary" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    /* Outer shell — always centers a 390px column */
     <div className="flex min-h-screen justify-center bg-[oklch(0.13_0.003_308)]">
       <div className="relative flex h-screen w-full max-w-[390px] flex-col overflow-hidden bg-background shadow-2xl">
 
-        {/* Scrollable content area */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
 
-          {/* ── AUTH ── */}
+          {/* ══════════════════════════ AUTH ══════════════════════════ */}
           {screen === "auth" && (
-            <div className="flex min-h-full flex-col justify-center px-6 py-12">
-              <div className="mb-8 flex flex-col items-center gap-3 text-center">
-                <div className="flex items-center gap-2">
-                  <IcBook className="h-7 w-7 text-primary" />
+            <div className="flex min-h-screen flex-col justify-center px-7 py-12">
+              {/* Logo + heading */}
+              <div className="mb-10 flex flex-col items-center gap-4 text-center">
+                <div className="flex items-center gap-2.5">
+                  <IcBook className="h-8 w-8 text-primary" />
                   <span className="text-2xl font-bold text-primary">PantryClip</span>
                 </div>
                 <div>
-                  <h1 className="text-3xl font-bold">
+                  <h1 className="text-[28px] font-bold leading-tight">
                     {authMode === "sign_in" ? "Welcome back" : "Create account"}
                   </h1>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {authMode === "sign_in"
-                      ? "Sign in to your account to continue"
-                      : "Start saving recipe clips as structured notes."}
+                  <p className="mt-1.5 text-sm text-muted-foreground">
+                    {authMode === "sign_in" ? "Sign in to your account to continue" : "Start saving recipe clips as notes."}
                   </p>
                 </div>
               </div>
 
-              <div className="space-y-4">
-                {/* Email */}
-                <div className="space-y-1.5">
-                  <SectionLabel>Email</SectionLabel>
+              <div className="space-y-5">
+                {/* Email field */}
+                <div className="space-y-2">
+                  <Label>Email</Label>
                   <div className="relative">
-                    <IcMail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <div className="pointer-events-none absolute inset-y-0 left-4 flex items-center">
+                      <IcMail className="h-[18px] w-[18px] text-muted-foreground" />
+                    </div>
                     <Input
-                      className="h-12 rounded-xl border-transparent bg-card pl-10 focus-visible:border-primary focus-visible:ring-0"
-                      placeholder="example@email.com"
                       type="email"
+                      placeholder="example@email.com"
                       value={authEmail}
                       onChange={(e) => setAuthEmail(e.target.value)}
+                      className="h-[52px] rounded-xl border-0 bg-card pl-11 text-sm focus-visible:ring-1 focus-visible:ring-primary"
                     />
                   </div>
                 </div>
 
-                {/* Password */}
-                <div className="space-y-1.5">
+                {/* Password field */}
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <SectionLabel>Password</SectionLabel>
+                    <Label>Password</Label>
                     {authMode === "sign_in" && (
-                      <button type="button" className="text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
+                      <button type="button" className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary">
                         Forgot Password?
                       </button>
                     )}
                   </div>
                   <div className="relative">
-                    <IcLock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <div className="pointer-events-none absolute inset-y-0 left-4 flex items-center">
+                      <IcLock className="h-[18px] w-[18px] text-muted-foreground" />
+                    </div>
                     <Input
-                      className="h-12 rounded-xl border-transparent bg-card pl-10 pr-10 focus-visible:border-primary focus-visible:ring-0"
                       type={showPassword ? "text" : "password"}
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
+                      className="h-[52px] rounded-xl border-0 bg-card pl-11 pr-11 text-sm focus-visible:ring-1 focus-visible:ring-primary"
                     />
                     <button
                       type="button"
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                       onClick={() => setShowPassword((v) => !v)}
+                      className="absolute inset-y-0 right-4 flex items-center text-muted-foreground"
                     >
-                      {showPassword ? <IcEyeOff className="h-4 w-4" /> : <IcEye className="h-4 w-4" />}
+                      {showPassword ? <IcEyeOff className="h-[18px] w-[18px]" /> : <IcEye className="h-[18px] w-[18px]" />}
                     </button>
                   </div>
                 </div>
 
-                {authError && <p className="text-sm text-destructive">{authError}</p>}
+                {authError  && <p className="text-sm text-destructive">{authError}</p>}
                 {authNotice && <p className="text-sm text-muted-foreground">{authNotice}</p>}
 
+                {/* CTA */}
                 <Button
-                  className="h-12 w-full gap-2 rounded-xl text-base font-bold"
-                  onClick={() => void handleAuthSubmit()}
-                  disabled={!isReady || authBusy}
                   type="button"
+                  className="h-[52px] w-full gap-3 rounded-xl text-[15px] font-bold"
+                  disabled={!isReady || authBusy}
+                  onClick={() => void handleAuthSubmit()}
                 >
-                  {!isReady ? "Loading..." : authBusy ? "Working..." : authMode === "sign_in" ? "Login" : "Create Account"}
+                  {authBusy ? "Loading..." : authMode === "sign_in" ? "Login" : "Create Account"}
                   {!authBusy && <IcArrow className="h-4 w-4" />}
                 </Button>
 
-                {/* TODO: Add Google and Apple social login */}
+                {/* TODO: Google and Apple social login */}
+                <Divider label="or continue with" />
+                <p className="text-center text-xs text-muted-foreground">Social login coming soon</p>
 
-                <p className="text-center text-sm text-muted-foreground">
+                <p className="pt-1 text-center text-sm text-muted-foreground">
                   {authMode === "sign_in" ? "Don't have an account? " : "Already have an account? "}
                   <button
                     type="button"
-                    className="font-semibold text-primary"
-                    onClick={() => {
-                      setAuthMode((m) => (m === "sign_in" ? "sign_up" : "sign_in"));
-                      setAuthError("");
-                      setAuthNotice("");
-                    }}
+                    className="font-bold text-primary"
+                    onClick={() => { setAuthMode((m) => m === "sign_in" ? "sign_up" : "sign_in"); setAuthError(""); setAuthNotice(""); }}
                   >
                     {authMode === "sign_in" ? "Sign Up" : "Sign In"}
                   </button>
@@ -682,261 +772,301 @@ export function RecipesHomeContainer() {
             </div>
           )}
 
-          {/* ── LIBRARY ── */}
+          {/* ══════════════════════════ LIBRARY ══════════════════════════ */}
           {screen === "list" && (
-            <div className="pb-4">
-              <TopBar
-                right={
-                  <>
-                    <button type="button" className="text-muted-foreground"><IcSearch className="h-5 w-5" /></button>
-                    <button type="button" className="text-muted-foreground"><IcBell className="h-5 w-5" /></button>
-                  </>
-                }
-              />
+            <div className="pb-6">
+              {/* Top bar */}
+              <div className="flex items-center justify-between px-5 pt-5 pb-4">
+                <Logo />
+                <div className="flex items-center gap-4">
+                  <button type="button" className="text-muted-foreground hover:text-foreground"><IcBell className="h-5 w-5" /></button>
+                </div>
+              </div>
 
               <div className="px-5">
-                <h1 className="text-3xl font-bold">My Recipes</h1>
+                <h1 className="text-[32px] font-bold leading-tight">My Recipes</h1>
                 <p className="mt-1 text-sm text-muted-foreground">나만의 요리 컬렉션을 관리하고 새로운 맛을 탐험하세요.</p>
 
                 <Button
-                  className="mt-4 h-12 w-full gap-2 rounded-xl font-semibold"
-                  onClick={() => { resetDraft(); setScreen("add"); }}
                   type="button"
+                  className="mt-5 h-12 w-full gap-2 rounded-xl font-bold"
+                  onClick={() => { resetDraft(); setScreen("add"); }}
                 >
                   <IcPlus className="h-4 w-4" />
                   Add Recipe
                 </Button>
 
+                {/* Search */}
                 <div className="relative mt-3">
-                  <IcSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <div className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center">
+                    <IcSearch className="h-4 w-4 text-muted-foreground" />
+                  </div>
                   <Input
-                    className="h-11 rounded-xl border-transparent bg-card pl-10 focus-visible:border-primary focus-visible:ring-0"
                     placeholder="Search recipes..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-12 rounded-xl border-0 bg-card pl-10 text-sm focus-visible:ring-1 focus-visible:ring-primary"
                   />
                 </div>
 
                 {recipesError && <p className="mt-3 text-sm text-destructive">{recipesError}</p>}
 
+                {/* Recent Recipes header */}
                 <div className="mt-6 flex items-center justify-between">
-                  <h2 className="text-lg font-bold">Recent Recipes</h2>
-                  {/* TODO: View All page */}
+                  <h2 className="text-[17px] font-bold">Recent Recipes</h2>
+                  {/* TODO: View All */}
                 </div>
 
+                {/* Empty states */}
                 {recipes.length === 0 && !recipesError && (
-                  <div className="mt-4 rounded-2xl border border-border bg-card p-6 text-center">
+                  <div className="mt-4 rounded-2xl bg-card p-6 text-center">
                     <p className="font-semibold">No recipes yet</p>
                     <p className="mt-1 text-xs text-muted-foreground">링크를 붙여넣어 첫 번째 레시피를 추가해보세요.</p>
                   </div>
                 )}
-
                 {recipes.length > 0 && filteredRecipes.length === 0 && (
-                  <div className="mt-4 rounded-2xl border border-border bg-card p-6 text-center">
+                  <div className="mt-4 rounded-2xl bg-card p-6 text-center">
                     <p className="font-semibold">No matches</p>
                     <p className="mt-1 text-xs text-muted-foreground">다른 검색어를 사용해보세요.</p>
                   </div>
                 )}
 
-                <div className="mt-3 space-y-3">
+                {/* Recipe cards */}
+                <div className="mt-4 space-y-4">
                   {filteredRecipes.map((recipe) => (
                     <button
                       key={recipe.id}
                       type="button"
-                      className="w-full rounded-2xl bg-card p-4 text-left transition hover:ring-1 hover:ring-primary/50 active:scale-[0.98]"
+                      className="w-full overflow-hidden rounded-2xl bg-card text-left transition active:scale-[0.98]"
                       onClick={() => { setSelectedRecipeId(recipe.id); setScreen("detail"); }}
                     >
-                      {/* TODO: Recipe hero image */}
-                      <div className="flex items-start gap-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-                              {sourceBadgeLabel(recipe.sourceType)}
-                            </Badge>
-                            {recipe.summarySource === "ai" && (
-                              <span className="text-[10px] font-bold uppercase tracking-wide text-primary">AI</span>
-                            )}
-                          </div>
-                          <h3 className="mt-1.5 font-semibold leading-snug">{recipe.title}</h3>
-                          <p className="mt-0.5 text-[11px] text-muted-foreground">{recipe.updatedAtLabel}</p>
+                      {/* TODO: Replace with real recipe image */}
+                      <div className="relative h-[160px] w-full">
+                        <ImgPlaceholder className="h-full w-full" />
+                        <div className="absolute right-3 top-3">
+                          <SourceBadge sourceType={recipe.sourceType} summarySource={recipe.summarySource} overlay />
                         </div>
+                      </div>
+                      <div className="p-4">
+                        <h3 className="font-bold leading-snug">{recipe.title}</h3>
+                        <p className="mt-1 text-[11px] text-muted-foreground">{recipe.updatedAtLabel}</p>
                       </div>
                     </button>
                   ))}
                 </div>
 
                 {/* Recipe Tip of the Day */}
-                <div className="mt-6 rounded-2xl bg-card p-5">
+                <div className="mt-4 rounded-2xl bg-card p-5">
                   <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">Recipe Tip of the Day</p>
-                  <p className="mt-2 font-semibold leading-snug">재료의 풍미를 극대화하는 시어링 기법</p>
-                  <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                    고기나 식재료를 높은 온도에서 빠르게 익혀 마이야르 반응을 일으키는 것은 맛의 깊이를 결정하는 핵심입니다.
+                  <p className="mt-2 font-bold leading-snug">식재료의 풍미를 극대화하는 시어링 기법</p>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                    고기나 식재료를 높은 온도에서 빠르게 익혀 마이야르 반응을 일으키는 것은 작은 온도에서 삶는 것과의 차이를 결정하는 핵심입니다. 팬을 충분히 예열하는 것부터 시작하세요.
                   </p>
+                  <button type="button" className="mt-3 flex items-center gap-1.5 text-[11px] font-bold text-primary">
+                    <IcUtensils className="h-3.5 w-3.5" />
+                    Check Professional Chef Guide
+                  </button>
+                </div>
+
+                {/* AI Recipe Generator banner */}
+                <div className="mt-4 flex items-center justify-between overflow-hidden rounded-2xl bg-primary p-5">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary-foreground/70">AI Recipe Generator</p>
+                    <p className="mt-1 text-sm font-bold leading-snug text-primary-foreground">당신의 새 레시피를 오늘 AI로 생성해보세요</p>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="mt-3 h-9 rounded-lg px-4 text-xs font-bold"
+                      onClick={() => { resetDraft(); setScreen("add"); }}
+                    >
+                      START NOW
+                    </Button>
+                  </div>
+                  <div className="text-4xl text-primary-foreground/30 select-none">✦</div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ── ADD RECIPE ── */}
+          {/* ══════════════════════════ ADD RECIPE ══════════════════════════ */}
           {screen === "add" && (
-            <div className="pb-4">
-              <TopBar
-                right={
-                  <>
-                    <button type="button" className="text-muted-foreground"><IcSearch className="h-5 w-5" /></button>
-                    <button type="button" className="text-muted-foreground"><IcSettings className="h-5 w-5" /></button>
-                  </>
-                }
-              />
+            <div className="pb-6">
+              {/* Top bar */}
+              <div className="flex items-center justify-between px-5 pt-5 pb-4">
+                <Logo />
+                <div className="flex items-center gap-4">
+                  <button type="button" className="text-muted-foreground"><IcSettings className="h-5 w-5" /></button>
+                </div>
+              </div>
 
               <div className="px-5">
-                <h1 className="text-3xl font-bold">Add Recipe</h1>
-                <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Add New Recipe
-                </p>
+                <h1 className="text-[32px] font-bold leading-tight">Add Recipe</h1>
+                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Add New Recipe</p>
 
-                {/* Section 01 */}
+                {/* ── Paste URL ── */}
                 <div className="mt-6">
-                  <SectionLabel>Section 01 / Paste URL</SectionLabel>
-                  <div className="relative mt-2">
+                  <div className="relative">
                     <Input
-                      className="h-12 rounded-xl border-transparent bg-card pr-10 focus-visible:border-primary focus-visible:ring-0"
+                      className="h-12 rounded-xl border-0 bg-card pr-12 text-sm focus-visible:ring-1 focus-visible:ring-primary"
                       placeholder="https://recipe-link.com/..."
                       value={addUrl}
                       onChange={(e) => setAddUrl(e.target.value)}
                     />
-                    <IcLink className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center">
+                      <IcLink className="h-4 w-4 text-muted-foreground" />
+                    </div>
                   </div>
-                  {urlError && <p className="mt-1.5 text-sm text-destructive">{urlError}</p>}
+                  {urlError && <p className="mt-2 text-sm text-destructive">{urlError}</p>}
 
                   <Button
-                    className="mt-3 h-12 w-full gap-2 rounded-xl text-base font-bold"
-                    onClick={() => void handleGenerate()}
-                    disabled={isGeneratingDraft}
                     type="button"
+                    className="mt-3 h-12 w-full gap-2.5 rounded-xl text-[15px] font-bold"
+                    onClick={() => void handleGenerate()}
+                    disabled={isGenerating}
                   >
-                    <IcBolt className="h-4 w-4" />
-                    {isGeneratingDraft ? "Generating..." : "Generate with AI"}
+                    <IcBolt className="h-[18px] w-[18px]" />
+                    {isGenerating ? "Generating..." : "Generate with AI"}
                   </Button>
 
-                  {isGeneratingDraft && (
-                    <div className="mt-3 flex items-center gap-3 rounded-xl bg-card px-4 py-3">
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                      <p className="text-sm italic text-muted-foreground">Analyzing flavor profile...</p>
+                  {/* Skeleton loading state */}
+                  {isGenerating && (
+                    <div className="mt-4 space-y-4">
+                      <div className="space-y-2">
+                        <Skeleton className="h-3 w-16" />
+                        <Skeleton className="h-12 w-full rounded-xl" />
+                      </div>
+                      <div className="space-y-2">
+                        <Skeleton className="h-3 w-20" />
+                        <Skeleton className="h-[120px] w-full rounded-xl" />
+                      </div>
+                      <div className="space-y-2">
+                        <Skeleton className="h-3 w-24" />
+                        <Skeleton className="h-[160px] w-full rounded-xl" />
+                      </div>
                     </div>
                   )}
                 </div>
 
-                {/* Section 02 */}
-                <div className="mt-8">
-                  <SectionLabel>Section 02 / Create Manually</SectionLabel>
-                  <div className="mt-3 grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      className="rounded-2xl bg-card p-4 text-left transition hover:ring-1 hover:ring-primary/50 active:scale-[0.98]"
-                      onClick={() => {
-                        setDraft({ sourceUrl: "", sourceType: "other", title: "", ingredientsText: "", stepsText: "", summarySource: "manual" });
-                        setDraftErrors({});
-                        setScreen("review");
-                      }}
-                    >
-                      <IcPen className="h-5 w-5 text-primary" />
-                      <p className="mt-2 text-sm font-semibold">Write Text</p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">Manual recipe input</p>
-                    </button>
+                {/* ── Review Draft (editable form, shown after AI generates) ── */}
+                {hasDraft && !isGenerating && (
+                  <div className="mt-6">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-[17px] font-bold">Review Draft</h2>
+                      <div className="flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1">
+                        <IcDot className="h-2 w-2 text-primary" />
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-primary">Draft</span>
+                      </div>
+                    </div>
 
-                    {/* TODO: Implement photo scan */}
-                    <div className="rounded-2xl bg-card p-4 opacity-40">
-                      <IcCamera className="h-5 w-5 text-primary" />
-                      <p className="mt-2 text-sm font-semibold">Scan Photo</p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">Coming soon</p>
+                    <div className="mt-3 space-y-4">
+                      <div className="space-y-2">
+                        <Label>Title</Label>
+                        <input
+                          className="h-12 w-full rounded-xl border-0 bg-card px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                          value={draft.title}
+                          onChange={(e) => setDraft((c) => ({ ...c, title: e.target.value }))}
+                          placeholder="레시피 제목"
+                        />
+                        {draftErrors.title && <p className="text-xs text-destructive">{draftErrors.title}</p>}
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Ingredients</Label>
+                        <IngredientListEditor
+                          value={draft.ingredientsText}
+                          onChange={(v) => setDraft((c) => ({ ...c, ingredientsText: v }))}
+                        />
+                        {draftErrors.ingredientsText && <p className="text-xs text-destructive">{draftErrors.ingredientsText}</p>}
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Preparation</Label>
+                        <StepListEditor
+                          value={draft.stepsText}
+                          onChange={(v) => setDraft((c) => ({ ...c, stepsText: v }))}
+                        />
+                        {draftErrors.stepsText && <p className="text-xs text-destructive">{draftErrors.stepsText}</p>}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-12 flex-1 rounded-xl font-bold"
+                        onClick={() => { resetDraft(); }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        className="h-12 flex-1 rounded-xl font-bold"
+                        onClick={() => void handleSaveAiDraft()}
+                      >
+                        Save to Library
+                      </Button>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* ── REVIEW / EDIT ── */}
-          {(screen === "review" || screen === "edit") && (
-            <div className="pb-4">
-              <div className="flex items-center gap-3 px-5 py-4">
-                <button
-                  type="button"
-                  onClick={() => setScreen(screen === "review" ? "add" : "detail")}
-                  className="text-muted-foreground"
-                >
+          {/* ══════════════════════════ MANUAL ENTRY (Write Text) ══════════════════════════ */}
+          {screen === "review" && (
+            <div className="pb-6">
+              <div className="flex items-center gap-3 px-5 pt-5 pb-4">
+                <button type="button" onClick={() => setScreen("add")} className="text-muted-foreground">
                   <IcLeft className="h-6 w-6" />
                 </button>
                 <Logo />
               </div>
-
               <div className="px-5">
-                <div className="flex items-center gap-3">
-                  <h1 className="text-2xl font-bold">{screen === "review" ? "Review Draft" : "Edit Recipe"}</h1>
-                  <span className="rounded-full bg-primary/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
-                    {screen === "review" ? "Draft" : "Edit"}
-                  </span>
-                </div>
+                <h1 className="text-2xl font-bold">New Recipe</h1>
+                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Write manually</p>
 
-                <div className="mt-5 space-y-4">
-                  <div className="space-y-1.5">
-                    <SectionLabel>Source URL</SectionLabel>
+                <div className="mt-6 space-y-4">
+                  <div className="space-y-2">
+                    <Label>Source URL</Label>
                     <Input
-                      className="h-11 rounded-xl border-transparent bg-card focus-visible:border-primary focus-visible:ring-0"
+                      className="h-12 rounded-xl border-0 bg-card focus-visible:ring-1 focus-visible:ring-primary"
                       value={draft.sourceUrl}
                       onChange={(e) => setDraft((c) => ({ ...c, sourceUrl: e.target.value, sourceType: inferSourceType(e.target.value) }))}
                       placeholder="https://..."
                     />
                     {draftErrors.sourceUrl && <p className="text-xs text-destructive">{draftErrors.sourceUrl}</p>}
                   </div>
-
-                  <div className="space-y-1.5">
-                    <SectionLabel>Title</SectionLabel>
+                  <div className="space-y-2">
+                    <Label>Title</Label>
                     <Input
-                      className="h-11 rounded-xl border-transparent bg-card focus-visible:border-primary focus-visible:ring-0"
+                      className="h-12 rounded-xl border-0 bg-card focus-visible:ring-1 focus-visible:ring-primary"
                       value={draft.title}
                       onChange={(e) => setDraft((c) => ({ ...c, title: e.target.value }))}
                       placeholder="레시피 제목"
                     />
                     {draftErrors.title && <p className="text-xs text-destructive">{draftErrors.title}</p>}
                   </div>
-
-                  <div className="space-y-1.5">
-                    <SectionLabel>Ingredients</SectionLabel>
-                    <Textarea
-                      className="min-h-[140px] rounded-xl border-transparent bg-card focus-visible:border-primary focus-visible:ring-0"
+                  <div className="space-y-2">
+                    <Label>Ingredients</Label>
+                    <IngredientListEditor
                       value={draft.ingredientsText}
-                      onChange={(e) => setDraft((c) => ({ ...c, ingredientsText: e.target.value }))}
+                      onChange={(v) => setDraft((c) => ({ ...c, ingredientsText: v }))}
                     />
                     {draftErrors.ingredientsText && <p className="text-xs text-destructive">{draftErrors.ingredientsText}</p>}
                   </div>
-
-                  <div className="space-y-1.5">
-                    <SectionLabel>Preparation</SectionLabel>
-                    <Textarea
-                      className="min-h-[180px] rounded-xl border-transparent bg-card focus-visible:border-primary focus-visible:ring-0"
+                  <div className="space-y-2">
+                    <Label>Preparation</Label>
+                    <StepListEditor
                       value={draft.stepsText}
-                      onChange={(e) => setDraft((c) => ({ ...c, stepsText: e.target.value }))}
+                      onChange={(v) => setDraft((c) => ({ ...c, stepsText: v }))}
                     />
                     {draftErrors.stepsText && <p className="text-xs text-destructive">{draftErrors.stepsText}</p>}
                   </div>
                 </div>
 
                 <div className="mt-6 flex gap-3">
-                  <Button
-                    variant="outline"
-                    className="h-12 flex-1 rounded-xl font-bold"
-                    onClick={() => setScreen(screen === "review" ? "add" : "detail")}
-                    type="button"
-                  >
+                  <Button type="button" variant="outline" className="h-12 flex-1 rounded-xl font-bold" onClick={() => setScreen("add")}>
                     Cancel
                   </Button>
-                  <Button
-                    className="h-12 flex-1 rounded-xl font-bold"
-                    onClick={() => void (screen === "review" ? handleSaveDraft() : handleSaveEdit())}
-                    type="button"
-                  >
+                  <Button type="button" className="h-12 flex-1 rounded-xl font-bold" onClick={() => void handleSaveManual()}>
                     Save to Library
                   </Button>
                 </div>
@@ -944,46 +1074,122 @@ export function RecipesHomeContainer() {
             </div>
           )}
 
-          {/* ── DETAIL ── */}
-          {screen === "detail" && selectedRecipe && (
-            <div className="pb-4">
-              <TopBar
-                onBack={() => setScreen("list")}
-                right={
-                  <>
-                    <button type="button" className="text-muted-foreground"><IcShare className="h-5 w-5" /></button>
-                    <button type="button" className="text-muted-foreground"><IcBookmark className="h-5 w-5" /></button>
-                  </>
-                }
-              />
-
-              {/* TODO: Recipe hero image — add image_url to data model */}
-              <div className="mx-5 h-52 rounded-2xl bg-gradient-to-br from-muted/60 to-card" />
-
-              <div className="mt-4 px-5">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="border-primary/30 text-[10px] uppercase tracking-wide text-primary">
-                    {sourceBadgeLabel(selectedRecipe.sourceType)}
-                  </Badge>
-                  {selectedRecipe.summarySource === "ai" && (
-                    <Badge variant="outline" className="border-primary/30 text-[10px] uppercase tracking-wide text-primary">
-                      AI
-                    </Badge>
-                  )}
+          {/* ══════════════════════════ EDIT ══════════════════════════ */}
+          {screen === "edit" && (
+            <div className="pb-6">
+              <div className="flex items-center gap-3 px-5 pt-5 pb-4">
+                <button type="button" onClick={() => setScreen("detail")} className="text-muted-foreground">
+                  <IcLeft className="h-6 w-6" />
+                </button>
+                <Logo />
+              </div>
+              <div className="px-5">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-bold">Edit Recipe</h1>
+                  <span className="rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Edit</span>
                 </div>
 
-                <h1 className="mt-2 text-2xl font-bold leading-tight">{selectedRecipe.title}</h1>
-                <p className="mt-1 break-all text-xs text-muted-foreground">{selectedRecipe.sourceUrl}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{selectedRecipe.updatedAtLabel}</p>
+                <div className="mt-6 space-y-4">
+                  <div className="space-y-2">
+                    <Label>Source URL</Label>
+                    <Input
+                      className="h-12 rounded-xl border-0 bg-card focus-visible:ring-1 focus-visible:ring-primary"
+                      value={draft.sourceUrl}
+                      onChange={(e) => setDraft((c) => ({ ...c, sourceUrl: e.target.value, sourceType: inferSourceType(e.target.value) }))}
+                    />
+                    {draftErrors.sourceUrl && <p className="text-xs text-destructive">{draftErrors.sourceUrl}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Title</Label>
+                    <Input
+                      className="h-12 rounded-xl border-0 bg-card focus-visible:ring-1 focus-visible:ring-primary"
+                      value={draft.title}
+                      onChange={(e) => setDraft((c) => ({ ...c, title: e.target.value }))}
+                    />
+                    {draftErrors.title && <p className="text-xs text-destructive">{draftErrors.title}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Ingredients</Label>
+                    <IngredientListEditor
+                      value={draft.ingredientsText}
+                      onChange={(v) => setDraft((c) => ({ ...c, ingredientsText: v }))}
+                    />
+                    {draftErrors.ingredientsText && <p className="text-xs text-destructive">{draftErrors.ingredientsText}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Preparation</Label>
+                    <StepListEditor
+                      value={draft.stepsText}
+                      onChange={(v) => setDraft((c) => ({ ...c, stepsText: v }))}
+                    />
+                    {draftErrors.stepsText && <p className="text-xs text-destructive">{draftErrors.stepsText}</p>}
+                  </div>
+                </div>
 
-                {/* TODO: Add nutrition data to data model (calories, protein, carbs) */}
+                <div className="mt-6 flex gap-3">
+                  <Button type="button" variant="outline" className="h-12 flex-1 rounded-xl font-bold" onClick={() => setScreen("detail")}>
+                    Cancel
+                  </Button>
+                  <Button type="button" className="h-12 flex-1 rounded-xl font-bold" onClick={() => void handleSaveEdit()}>
+                    Save Changes
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════ DETAIL ══════════════════════════ */}
+          {screen === "detail" && selectedRecipe && (
+            <div className="pb-6">
+              {/* Top bar */}
+              <div className="flex items-center justify-between px-5 pt-5 pb-4">
+                <button type="button" onClick={() => setScreen("list")} className="flex items-center gap-1.5 font-bold text-primary">
+                  <IcLeft className="h-5 w-5" />
+                  <span className="text-sm">Recipe Details</span>
+                </button>
+                <div className="flex items-center gap-4">
+                  <button type="button" className="text-muted-foreground"><IcShare className="h-5 w-5" /></button>
+                  <button
+                    type="button"
+                    onClick={() => void handleToggleSave()}
+                    className={selectedRecipe.isSaved ? "text-primary" : "text-muted-foreground"}
+                  >
+                    <IcBookmark className={`h-5 w-5 ${selectedRecipe.isSaved ? "fill-primary" : ""}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Hero image — TODO: replace with real image */}
+              <ImgPlaceholder className="mx-5 h-[220px] rounded-2xl" />
+
+              <div className="mt-5 px-5">
+                {/* Badges + meta */}
+                <div className="flex items-center justify-between">
+                  <SourceBadge sourceType={selectedRecipe.sourceType} summarySource={selectedRecipe.summarySource} />
+                  <span className="text-[11px] text-muted-foreground">{selectedRecipe.updatedAtLabel}</span>
+                </div>
+
+                <h1 className="mt-3 text-[26px] font-bold leading-tight">{selectedRecipe.title}</h1>
+
+                {/* Clickable source link */}
+                <a
+                  href={selectedRecipe.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-2 hover:text-primary hover:underline"
+                >
+                  <IcLink className="h-3 w-3 flex-shrink-0" />
+                  <span className="truncate">{selectedRecipe.sourceUrl}</span>
+                </a>
+
+                {/* TODO: Add nutrition data (calories, protein, carbs) to data model */}
 
                 {/* Ingredients */}
                 <div className="mt-6">
-                  <SectionLabel>Ingredients</SectionLabel>
-                  <div className="mt-3 space-y-0 divide-y divide-border">
+                  <Label>Ingredients</Label>
+                  <div className="mt-3 space-y-1.5">
                     {toIngredientItems(selectedRecipe.ingredientsText).map((item) => (
-                      <div key={item} className="py-2.5">
+                      <div key={item} className="flex items-center justify-between rounded-xl bg-card px-4 py-3">
                         <span className="text-sm">{item}</span>
                       </div>
                     ))}
@@ -992,78 +1198,103 @@ export function RecipesHomeContainer() {
 
                 {/* Preparation */}
                 <div className="mt-6">
-                  <SectionLabel>Preparation</SectionLabel>
-                  <div className="mt-3 space-y-4">
+                  <Label>Preparation</Label>
+                  <div className="mt-3 space-y-2">
                     {toStepItems(selectedRecipe.stepsText).map((step, i) => (
-                      <div key={step} className="flex gap-3">
+                      <div key={step} className="flex gap-4 rounded-xl bg-card px-4 py-3.5">
                         <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
                           {String(i + 1).padStart(2, "0")}
                         </div>
-                        <p className="mt-0.5 text-sm leading-relaxed">{step}</p>
+                        <p className="flex-1 text-sm leading-relaxed">{step}</p>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* Actions */}
+                {/* Edit / Delete */}
                 <div className="mt-6 flex gap-3">
-                  <Button variant="outline" className="h-12 flex-1 rounded-xl font-bold" onClick={openEdit} type="button">
-                    Edit
-                  </Button>
-                  <Button variant="destructive" className="h-12 flex-1 rounded-xl font-bold" onClick={() => setShowDeleteModal(true)} type="button">
-                    Delete
-                  </Button>
+                  <Button type="button" variant="outline" className="h-12 flex-1 rounded-xl font-bold" onClick={openEdit}>Edit</Button>
+                  <Button type="button" variant="destructive" className="h-12 flex-1 rounded-xl font-bold" onClick={() => setShowDeleteModal(true)}>Delete</Button>
                 </div>
-
-                {/* TODO: Implement cooking mode */}
-                <Button className="mt-3 h-12 w-full gap-2 rounded-xl font-bold" type="button" disabled>
-                  <IcUtensils className="h-4 w-4" />
-                  Start Cooking Mode
-                </Button>
               </div>
             </div>
           )}
 
-          {/* ── SCRAP (coming soon) ── */}
+          {/* ══════════════════════════ SAVED ══════════════════════════ */}
           {screen === "scrap" && (
-            <div className="flex min-h-full flex-col items-center justify-center px-6 py-12 text-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-card">
-                <IcBookmark className="h-7 w-7 text-primary" />
+            <div className="pb-6">
+              <div className="flex items-center justify-between px-5 pt-5 pb-4">
+                <Logo />
               </div>
-              <h2 className="mt-4 text-xl font-bold">Scrap</h2>
-              <p className="mt-2 max-w-[240px] text-sm text-muted-foreground">
-                나중에 시도해볼 레시피를 스크랩하세요. 곧 출시됩니다.
-              </p>
+              <div className="px-5">
+                <h1 className="text-[32px] font-bold leading-tight">Saved</h1>
+                <p className="mt-1 text-sm text-muted-foreground">저장한 레시피 모음입니다.</p>
+
+                {recipes.filter((r) => r.isSaved).length === 0 ? (
+                  <div className="mt-8 flex flex-col items-center gap-4 py-12 text-center">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-card">
+                      <IcBookmark className="h-7 w-7 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="font-semibold">저장된 레시피가 없습니다</p>
+                      <p className="mt-1 text-sm text-muted-foreground">레시피 상세 페이지에서 북마크 버튼을 눌러보세요.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-4">
+                    {recipes.filter((r) => r.isSaved).map((recipe) => (
+                      <button
+                        key={recipe.id}
+                        type="button"
+                        className="w-full overflow-hidden rounded-2xl bg-card text-left transition active:scale-[0.98]"
+                        onClick={() => { setSelectedRecipeId(recipe.id); setScreen("detail"); }}
+                      >
+                        <div className="relative h-[140px] w-full">
+                          <ImgPlaceholder className="h-full w-full" />
+                          <div className="absolute right-3 top-3">
+                            <SourceBadge sourceType={recipe.sourceType} summarySource={recipe.summarySource} overlay />
+                          </div>
+                          <div className="absolute left-3 top-3">
+                            <IcBookmark className="h-4 w-4 fill-primary text-primary" />
+                          </div>
+                        </div>
+                        <div className="p-4">
+                          <h3 className="font-bold leading-snug">{recipe.title}</h3>
+                          <p className="mt-1 text-[11px] text-muted-foreground">{recipe.updatedAtLabel}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
-          {/* ── PROFILE ── */}
+          {/* ══════════════════════════ PROFILE ══════════════════════════ */}
           {screen === "profile" && (
-            <div className="pb-4">
-              <TopBar />
+            <div className="pb-8">
+              <div className="flex items-center justify-between px-5 pt-5 pb-4">
+                <Logo />
+              </div>
               <div className="px-5">
-                <div className="flex flex-col items-center py-8">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                    <IcUser className="h-8 w-8 text-muted-foreground" />
+                <div className="flex flex-col items-center py-10">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-full bg-card">
+                    <IcUser className="h-9 w-9 text-muted-foreground" />
                   </div>
-                  <p className="mt-3 font-semibold">{session?.user.email}</p>
-                  <p className="text-xs text-muted-foreground">{recipes.length}개의 레시피 저장됨</p>
+                  <p className="mt-4 font-bold">{session?.user.email}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{recipes.length}개의 레시피 저장됨</p>
                 </div>
-                <Button
-                  variant="outline"
-                  className="h-12 w-full rounded-xl font-semibold"
-                  onClick={() => void signOut()}
-                  type="button"
-                >
+                <Button type="button" variant="outline" className="h-12 w-full rounded-xl font-bold" onClick={() => void signOut()}>
                   Sign Out
                 </Button>
               </div>
             </div>
           )}
-        </div>
 
-        {/* ── BOTTOM NAV ── */}
-        {showBottomNav && (
+        </div>{/* end scroll area */}
+
+        {/* ── Bottom Nav ── */}
+        {!!session && screen !== "auth" && (
           <BottomNav
             activeTab={activeTab}
             onLibrary={() => setScreen("list")}
@@ -1073,32 +1304,28 @@ export function RecipesHomeContainer() {
           />
         )}
 
-        {/* ── DELETE MODAL ── */}
+        {/* ── Delete modal ── */}
         {showDeleteModal && selectedRecipe && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
-            <div className="w-full rounded-2xl bg-card p-6">
+          <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/60">
+            <div className="w-full rounded-t-3xl bg-card p-6 pb-8">
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-muted" />
               <h2 className="text-lg font-bold">레시피 삭제</h2>
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                "{selectedRecipe.title}"을 삭제할까요? 이 작업은 되돌릴 수 없습니다.
-              </p>
-              <div className="mt-5 flex gap-3">
-                <Button variant="outline" className="h-11 flex-1 rounded-xl" onClick={() => setShowDeleteModal(false)} type="button">
-                  Cancel
-                </Button>
-                <Button variant="destructive" className="h-11 flex-1 rounded-xl" onClick={() => void handleDelete()} type="button">
-                  Delete
-                </Button>
+              <p className="mt-2 text-sm text-muted-foreground">"{selectedRecipe.title}"을 삭제할까요? 되돌릴 수 없습니다.</p>
+              <div className="mt-6 flex gap-3">
+                <Button type="button" variant="outline" className="h-12 flex-1 rounded-xl font-bold" onClick={() => setShowDeleteModal(false)}>Cancel</Button>
+                <Button type="button" variant="destructive" className="h-12 flex-1 rounded-xl font-bold" onClick={() => void handleDelete()}>Delete</Button>
               </div>
             </div>
           </div>
         )}
 
-        {/* ── TOAST ── */}
+        {/* ── Toast ── */}
         {toastMessage && (
-          <div className="absolute bottom-20 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-full bg-foreground px-5 py-2 text-sm font-medium text-background">
+          <div className="absolute bottom-24 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-full bg-foreground px-5 py-2.5 text-sm font-semibold text-background shadow-lg">
             {toastMessage}
           </div>
         )}
+
       </div>
     </div>
   );

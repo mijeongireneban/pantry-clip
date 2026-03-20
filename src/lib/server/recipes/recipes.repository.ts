@@ -20,6 +20,7 @@ function toRecipe(record: {
   stepsText: string;
   summarySource: PrismaSummarySource;
   aiConfidence: number | null;
+  isSaved: boolean;
   createdAt: Date;
   updatedAt: Date;
 }): Recipe {
@@ -33,6 +34,7 @@ function toRecipe(record: {
     stepsText: record.stepsText,
     summarySource: record.summarySource,
     aiConfidence: record.aiConfidence,
+    isSaved: record.isSaved,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString()
   };
@@ -139,6 +141,7 @@ export async function updateRecipe(
       ...(patch.stepsText !== undefined ? { stepsText: patch.stepsText.trim() } : {}),
       ...(patch.summarySource !== undefined ? { summarySource: patch.summarySource } : {}),
       ...(patch.aiConfidence !== undefined ? { aiConfidence: patch.aiConfidence } : {}),
+      ...(patch.isSaved !== undefined ? { isSaved: patch.isSaved } : {}),
       updatedAt: new Date()
     }
   });
