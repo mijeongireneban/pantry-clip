@@ -12,11 +12,9 @@ import {
   updateRecipe as updateRecipeRequest
 } from "@/src/apis/recipes";
 import { useAuth } from "@/src/apps/app/auth.provider";
-import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { Skeleton } from "@/src/components/ui/skeleton";
-import { Textarea } from "@/src/components/ui/textarea";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -54,12 +52,6 @@ function inferSourceType(url: string): SourceType {
   if (n.includes("youtube.com/shorts") || n.includes("youtu.be/")) return "youtube_shorts";
   if (n.includes("instagram.com/reel")) return "instagram_reels";
   return "other";
-}
-
-function sourceBadgeLabel(t: SourceType) {
-  if (t === "youtube_shorts") return "YouTube";
-  if (t === "instagram_reels") return "Instagram";
-  return "Manual";
 }
 
 function toIngredientItems(text: string) {
@@ -128,18 +120,6 @@ const IcLink = ({ className }: { className?: string }) => (
 );
 const IcBolt = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-);
-const IcPen = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-  </svg>
-);
-const IcCamera = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-    <circle cx="12" cy="13" r="4"/>
-  </svg>
 );
 const IcLeft = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1310,7 +1290,7 @@ export function RecipesHomeContainer() {
             <div className="w-full rounded-t-3xl bg-card p-6 pb-8">
               <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-muted" />
               <h2 className="text-lg font-bold">레시피 삭제</h2>
-              <p className="mt-2 text-sm text-muted-foreground">"{selectedRecipe.title}"을 삭제할까요? 되돌릴 수 없습니다.</p>
+              <p className="mt-2 text-sm text-muted-foreground">&ldquo;{selectedRecipe.title}&rdquo;을 삭제할까요? 되돌릴 수 없습니다.</p>
               <div className="mt-6 flex gap-3">
                 <Button type="button" variant="outline" className="h-12 flex-1 rounded-xl font-bold" onClick={() => setShowDeleteModal(false)}>Cancel</Button>
                 <Button type="button" variant="destructive" className="h-12 flex-1 rounded-xl font-bold" onClick={() => void handleDelete()}>Delete</Button>
