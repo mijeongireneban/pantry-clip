@@ -17,6 +17,7 @@ export type RecipeDto = {
   stepsText: string;
   summarySource: SummarySource;
   aiConfidence: number | null;
+  isSaved: boolean;
   createdAt: string;
   updatedAt: string;
 };

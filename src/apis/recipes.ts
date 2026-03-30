@@ -100,6 +100,20 @@ export async function updateRecipe(id: string, payload: UpdateRecipeRequest) {
   return (await response.json()) as RecipeDto;
 }
 
+export async function toggleSaveRecipe(id: string, isSaved: boolean) {
+  const response = await fetch(`/api/recipes/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ isSaved })
+  });
+
+  if (!response.ok) {
+    throw new Error(await toErrorMessage(response, "Failed to update recipe."));
+  }
+
+  return (await response.json()) as RecipeDto;
+}
+
 export async function deleteRecipe(id: string) {
   const response = await fetch(`/api/recipes/${id}`, {
     method: "DELETE"
