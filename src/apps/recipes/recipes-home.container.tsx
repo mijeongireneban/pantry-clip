@@ -1417,6 +1417,13 @@ export function RecipesHomeContainer() {
     window.setTimeout(() => setToastMessage(""), 2400);
   };
 
+  const openLibraryForRecipe = (recipeId: string) => {
+    setSearchQuery("");
+    setSearchResults(null);
+    setSelectedRecipeId(recipeId);
+    setScreen("list");
+  };
+
   const resetDraft = () => {
     setDraft({
       sourceUrl: "",
@@ -1565,9 +1572,8 @@ export function RecipesHomeContainer() {
       });
       const next = toRecipe(created);
       upsertRecipeCollections(next, { insertIntoBase: true });
-      setSelectedRecipeId(next.id);
       resetDraft();
-      setScreen("detail");
+      openLibraryForRecipe(next.id);
       showToast(ui.add.saveUrlOnlySuccess);
     } catch (err) {
       setUrlError(
@@ -1594,9 +1600,8 @@ export function RecipesHomeContainer() {
       });
       const next = toRecipe(created);
       upsertRecipeCollections(next, { insertIntoBase: true });
-      setSelectedRecipeId(next.id);
       resetDraft();
-      setScreen("detail");
+      openLibraryForRecipe(next.id);
       showToast(ui.actions.recipeSaved);
     } catch (err) {
       setDraftErrors((c) => ({
@@ -1622,9 +1627,8 @@ export function RecipesHomeContainer() {
       });
       const next = toRecipe(created);
       upsertRecipeCollections(next, { insertIntoBase: true });
-      setSelectedRecipeId(next.id);
       resetDraft();
-      setScreen("detail");
+      openLibraryForRecipe(next.id);
       showToast(ui.actions.recipeSaved);
     } catch (err) {
       setDraftErrors((c) => ({
