@@ -6,10 +6,9 @@ This list was validated against the current implementation before being added he
 
 ## TODOs
 
-- [ ] Add a directory or folder feature to the Saved tab.
-  - Validation: the Saved screen is currently a flat filtered list built from `recipes.filter((r) => r.isSaved)`, with no grouping, folder, or category model.
-  - Clarification needed: define whether "directory" means folders, categories, collections, or sorting/grouping only.
-  - Relevant files: `src/apps/recipes/recipes-home.container.tsx`, `prisma/schema.prisma`
+- [x] Add a directory or folder feature to the Saved tab.
+  - Completed: Saved is now collections-based, with a real `RecipeCollection` data model, collection filtering in the Saved tab, and create/rename/delete plus recipe assignment flows.
+  - Relevant files: `src/apps/recipes/recipes-home.container.tsx`, `prisma/schema.prisma`, `src/lib/server/recipe-collections/recipe-collections.repository.ts`
 
 - [x] Add a saved-state bookmark icon to each recipe card on the Library view.
   - Completed: Library cards now render a bookmark overlay so saved state is visible alongside the existing source badge.
@@ -55,5 +54,5 @@ This list was validated against the current implementation before being added he
 
 ## Summary
 
-- Remaining: Saved directories, functional tip CTA, name/avatar support
-- Completed in this pass: English default, library saved-state icon, initial loading skeletons, search completion, Add-view settings cleanup, theme toggle, stricter Shorts validation
+- Remaining: functional tip CTA, name/avatar support
+- Completed in this pass: Saved collections, English default, library saved-state icon, initial loading skeletons, search completion, Add-view settings cleanup, theme toggle, stricter Shorts validation

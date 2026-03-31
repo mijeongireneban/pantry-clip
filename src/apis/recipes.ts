@@ -141,8 +141,8 @@ export async function updateRecipe(id: string, payload: UpdateRecipeRequest) {
 }
 
 export async function toggleSaveRecipe(id: string, isSaved: boolean) {
-  const response = await fetch(`/api/recipes/${id}`, {
-    method: "PATCH",
+  const response = await fetch(`/api/recipes/${id}/save`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ isSaved })
   });

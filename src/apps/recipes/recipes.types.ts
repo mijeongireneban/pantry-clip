@@ -47,6 +47,7 @@ export type Recipe = {
   summarySource: SummarySource;
   aiConfidence: number | null;
   isSaved: boolean;
+  collectionIds: string[];
   createdAt: string;
   updatedAt: string;
 };
