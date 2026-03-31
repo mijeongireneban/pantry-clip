@@ -1,142 +1,100 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
-import type { RecipeDto } from "@/src/apis/@types/recipes";
 import {
   createRecipe as createRecipeRequest,
+  createSummarizeJob as createSummarizeJobRequest,
   deleteRecipe as deleteRecipeRequest,
-  listRecipes as listRecipesRequest,
-  summarizeRecipe as summarizeRecipeRequest,
+  getSummarizeJob as getSummarizeJobRequest,
+  saveRecipeUrl as saveRecipeUrlRequest,
+  toggleSaveRecipe as toggleSaveRecipeRequest,
   updateRecipe as updateRecipeRequest
 } from "@/src/apis/recipes";
+import {
+  createRecipeCollection as createRecipeCollectionRequest,
+  deleteRecipeCollection as deleteRecipeCollectionRequest,
+  setRecipeCollections as setRecipeCollectionsRequest,
+  updateRecipeCollection as updateRecipeCollectionRequest
+} from "@/src/apis/recipe-collections";
 import { useAuth } from "@/src/apps/app/auth.provider";
-import { Badge } from "@/src/components/ui/badge";
-import { Button } from "@/src/components/ui/button";
-import { Card } from "@/src/components/ui/card";
-import { Input } from "@/src/components/ui/input";
-import { Label } from "@/src/components/ui/label";
-import { Textarea } from "@/src/components/ui/textarea";
+import { useTheme } from "@/src/apps/app/theme.provider";
+import { IcBook } from "@/src/apps/recipes/icons";
+import { BottomNav } from "@/src/apps/recipes/components/BottomNav";
+import { useLanguage } from "@/src/apps/recipes/hooks/useLanguage";
+import { useRecipeLibrary } from "@/src/apps/recipes/hooks/useRecipeLibrary";
+import { useRecipeCollections } from "@/src/apps/recipes/hooks/useRecipeCollections";
+import { AuthScreen } from "@/src/apps/recipes/screens/AuthScreen";
+import { LibraryScreen } from "@/src/apps/recipes/screens/LibraryScreen";
+import { AddRecipeScreen } from "@/src/apps/recipes/screens/AddRecipeScreen";
+import { ManualEntryScreen } from "@/src/apps/recipes/screens/ManualEntryScreen";
+import { EditScreen } from "@/src/apps/recipes/screens/EditScreen";
+import { DetailScreen } from "@/src/apps/recipes/screens/DetailScreen";
+import { SavedScreen } from "@/src/apps/recipes/screens/SavedScreen";
+import { ProfileScreen } from "@/src/apps/recipes/screens/ProfileScreen";
+import { DeleteRecipeModal } from "@/src/apps/recipes/modals/DeleteRecipeModal";
+import { CollectionModal } from "@/src/apps/recipes/modals/CollectionModal";
+import { EditCollectionsModal } from "@/src/apps/recipes/modals/EditCollectionsModal";
+import { ManageRecipeCollectionsModal } from "@/src/apps/recipes/modals/ManageRecipeCollectionsModal";
+import { DeleteCollectionModal } from "@/src/apps/recipes/modals/DeleteCollectionModal";
+import { toRecipeItem } from "@/src/apps/recipes/ui.adapters";
+import { copy } from "@/src/apps/recipes/ui.constants";
+import {
+  inferSourceType,
+  isAbortError,
+  matchesRecipeSearchQuery,
+  removeRecipeFromList,
+  sleep,
+  upsertRecipeInList,
+  validateDraft
+} from "@/src/apps/recipes/ui.helpers";
+import type { SummarizeJobStatus } from "@/src/apps/recipes/recipes.types";
+import type {
+  Language,
+  RecipeCollectionSummary,
+  RecipeDraft,
+  RecipeItem,
+  Screen,
+  Tab
+} from "@/src/apps/recipes/ui.types";
 
-type SourceType = "youtube_shorts" | "instagram_reels" | "other";
-type SummarySource = "manual" | "ai";
-
-type Recipe = {
-  id: string;
-  sourceType: SourceType;
-  sourceUrl: string;
-  title: string;
-  ingredientsText: string;
-  stepsText: string;
-  summarySource: SummarySource;
-  updatedAtLabel: string;
-};
-
-type Screen = "auth" | "list" | "add" | "loading" | "review" | "detail" | "edit";
-
-type RecipeDraft = {
-  sourceUrl: string;
-  sourceType: SourceType;
-  title: string;
-  ingredientsText: string;
-  stepsText: string;
-  summarySource: SummarySource;
-};
-
-function inferSourceType(sourceUrl: string): SourceType {
-  const normalized = sourceUrl.toLowerCase();
-  if (normalized.includes("youtube.com/shorts") || normalized.includes("youtu.be/")) {
-    return "youtube_shorts";
-  }
-  if (normalized.includes("instagram.com/reel") || normalized.includes("instagram.com/reels")) {
-    return "instagram_reels";
-  }
-  return "other";
-}
-
-function sourceBadge(sourceType: SourceType) {
-  if (sourceType === "youtube_shorts") {
-    return "YouTube";
-  }
-  if (sourceType === "instagram_reels") {
-    return "Instagram";
-  }
-  return "Manual";
-}
-
-function toIngredientItems(text: string) {
-  return text
-    .split("\n")
-    .map((line) => line.replace(/^-+\s*/, "").trim())
-    .filter(Boolean);
-}
-
-function toStepItems(text: string) {
-  return text
-    .split("\n")
-    .map((line) => line.replace(/^\d+\.\s*/, "").trim())
-    .filter(Boolean);
-}
-
-function validateDraft(draft: RecipeDraft) {
-  const errors: Partial<Record<keyof RecipeDraft, string>> = {};
-
-  if (!draft.sourceUrl.trim()) {
-    errors.sourceUrl = "Please add a video URL.";
-  }
-  if (!draft.title.trim()) {
-    errors.title = "Title is required.";
-  }
-  if (!draft.ingredientsText.trim()) {
-    errors.ingredientsText = "Ingredients are required.";
-  }
-  if (!draft.stepsText.trim()) {
-    errors.stepsText = "Steps are required.";
-  }
-
-  return errors;
-}
-
-function toUpdatedAtLabel(updatedAt: string) {
-  return `Updated ${new Date(updatedAt).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  })}`;
-}
-
-function toRecipe(dto: RecipeDto): Recipe {
-  return {
-    id: dto.id,
-    sourceUrl: dto.sourceUrl,
-    sourceType: dto.sourceType,
-    title: dto.title,
-    ingredientsText: dto.ingredientsText,
-    stepsText: dto.stepsText,
-    summarySource: dto.summarySource,
-    updatedAtLabel: toUpdatedAtLabel(dto.updatedAt)
-  };
-}
+const ALL_SAVED_COLLECTION_ID = "all";
 
 export function RecipesHomeContainer() {
-  const { isReady, session, signInWithPassword, signOut, signUpWithPassword } = useAuth();
+  const { isReady, session, signInWithPassword, signOut, signUpWithPassword } =
+    useAuth();
+  const { theme, setTheme } = useTheme();
+  const { language, setLanguage } = useLanguage();
+
   const [screen, setScreen] = useState<Screen>("auth");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [selectedRecipeId, setSelectedRecipeId] = useState("");
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [authEmail, setAuthEmail] = useState("you@example.com");
+
+  // ─── Auth form state ──────────────────────────────────────────────────────
+  const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
   const [authMode, setAuthMode] = useState<"sign_in" | "sign_up">("sign_in");
   const [authBusy, setAuthBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  // ─── Recipe library ───────────────────────────────────────────────────────
+  const library = useRecipeLibrary({ session, isReady, language });
+
+  // ─── Collections ──────────────────────────────────────────────────────────
+  const collections = useRecipeCollections({
+    session,
+    isReady,
+    language,
+    ALL_SAVED_COLLECTION_ID
+  });
+
+  // ─── Draft state ──────────────────────────────────────────────────────────
   const [addUrl, setAddUrl] = useState("");
   const [urlError, setUrlError] = useState("");
-  const [recipesError, setRecipesError] = useState("");
-  const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
-  const [draftErrors, setDraftErrors] = useState<Partial<Record<keyof RecipeDraft, string>>>({});
-  const [toastMessage, setToastMessage] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSavingUrlOnly, setIsSavingUrlOnly] = useState(false);
+  const [summarizeJobStatus, setSummarizeJobStatus] =
+    useState<SummarizeJobStatus | null>(null);
   const [draft, setDraft] = useState<RecipeDraft>({
     sourceUrl: "",
     sourceType: "other",
@@ -145,77 +103,161 @@ export function RecipesHomeContainer() {
     stepsText: "",
     summarySource: "ai"
   });
+  const [draftErrors, setDraftErrors] = useState<
+    Partial<Record<keyof RecipeDraft, string>>
+  >({});
+
+  // ─── Modal state ──────────────────────────────────────────────────────────
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showCreateCollectionModal, setShowCreateCollectionModal] =
+    useState(false);
+  const [showEditCollectionsModal, setShowEditCollectionsModal] =
+    useState(false);
+  const [showCollectionsModal, setShowCollectionsModal] = useState(false);
+  const [collectionModalMode, setCollectionModalMode] = useState<
+    "create" | "rename"
+  >("create");
+  const [editingCollection, setEditingCollection] =
+    useState<RecipeCollectionSummary | null>(null);
+  const [pendingDeleteCollection, setPendingDeleteCollection] =
+    useState<RecipeCollectionSummary | null>(null);
+  const [collectionName, setCollectionName] = useState("");
+  const [collectionSelection, setCollectionSelection] = useState<string[]>([]);
+  const [collectionError, setCollectionError] = useState("");
+  const [isCreatingCollection, setIsCreatingCollection] = useState(false);
+  const [isDeletingCollection, setIsDeletingCollection] = useState(false);
+  const [isUpdatingCollections, setIsUpdatingCollections] = useState(false);
+
+  // ─── Toast ────────────────────────────────────────────────────────────────
+  const [toastMessage, setToastMessage] = useState("");
+
+  // ─── Derived ─────────────────────────────────────────────────────────────
+  const ui = copy[language];
+  const hasDraft = draft.sourceUrl.trim() !== "";
 
   const selectedRecipe = useMemo(
-    () => recipes.find((recipe) => recipe.id === selectedRecipeId) ?? null,
-    [recipes, selectedRecipeId]
+    () =>
+      collections.savedRecipes?.find(
+        (r) => r.id === library.selectedRecipeId
+      ) ??
+      library.searchResults?.find((r) => r.id === library.selectedRecipeId) ??
+      library.recipes.find((r) => r.id === library.selectedRecipeId) ??
+      null,
+    [
+      collections.savedRecipes,
+      library.recipes,
+      library.searchResults,
+      library.selectedRecipeId
+    ]
   );
 
-  const filteredRecipes = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) {
-      return recipes;
-    }
-    return recipes.filter((recipe) => recipe.title.toLowerCase().includes(q));
-  }, [recipes, searchQuery]);
+  const savedCollectionRecipes = collections.savedRecipes ?? [];
 
-  useEffect(() => {
-    if (!isReady) {
-      return;
-    }
-    if (session) {
-      setScreen((current) => (current === "auth" ? "list" : current));
-      return;
-    }
-    setScreen("auth");
-  }, [isReady, session]);
+  const isSavedEmpty =
+    !collections.isSavedRecipesLoading &&
+    !collections.savedError &&
+    savedCollectionRecipes.length === 0 &&
+    collections.collections.length > 0;
 
-  useEffect(() => {
-    if (!isReady || !session) {
-      setRecipes([]);
-      setSelectedRecipeId("");
-      return;
+  const activeTab = useMemo<Tab>(() => {
+    if (["list", "detail", "edit"].includes(screen)) return "library";
+    if (["add", "review"].includes(screen)) return "add";
+    if (screen === "scrap") return "scrap";
+    if (screen === "profile") return "profile";
+    return "library";
+  }, [screen]);
+
+  const matchesSavedCollectionFilter = (recipe: RecipeItem) => {
+    if (collections.selectedSavedCollectionId === ALL_SAVED_COLLECTION_ID) {
+      return recipe.isSaved;
     }
-
-    void (async () => {
-      try {
-        setRecipesError("");
-        const response = await listRecipesRequest();
-        const items = response.items.map(toRecipe);
-        setRecipes(items);
-        setSelectedRecipeId((current) => current || items[0]?.id || "");
-      } catch (error) {
-        setRecipesError(error instanceof Error ? error.message : "Failed to load recipes.");
-      }
-    })();
-  }, [isReady, session]);
-
-  const showToast = (message: string) => {
-    setToastMessage(message);
-    window.setTimeout(() => setToastMessage(""), 2200);
+    return recipe.collectionIds.includes(
+      collections.selectedSavedCollectionId
+    );
   };
 
-  const handleAuthSubmit = async () => {
-    setAuthError("");
-    setAuthNotice("");
-    setAuthBusy(true);
+  // ─── Cross-list recipe state mutations ───────────────────────────────────
 
-    try {
-      if (authMode === "sign_up") {
-        await signUpWithPassword(authEmail.trim(), authPassword);
-        setAuthNotice("Account created. Check your email to confirm sign-up before logging in.");
-        setAuthPassword("");
-        return;
+  const upsertRecipeCollections = (
+    nextRecipe: RecipeItem,
+    options?: { insertIntoBase?: boolean }
+  ) => {
+    library.setRecipes((current) => {
+      const exists = current.some((r) => r.id === nextRecipe.id);
+      if (!exists && !options?.insertIntoBase) return current;
+      return upsertRecipeInList(current, nextRecipe);
+    });
+    library.setSearchResults((current) => {
+      if (current === null) return current;
+      if (!matchesRecipeSearchQuery(nextRecipe, library.debouncedSearchQuery)) {
+        return removeRecipeFromList(current, nextRecipe.id);
       }
-
-      await signInWithPassword(authEmail.trim(), authPassword);
-      setScreen("list");
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Authentication failed.");
-    } finally {
-      setAuthBusy(false);
-    }
+      return upsertRecipeInList(current, nextRecipe);
+    });
+    collections.setSavedRecipes((current) => {
+      if (current === null) return current;
+      if (!matchesSavedCollectionFilter(nextRecipe)) {
+        return removeRecipeFromList(current, nextRecipe.id);
+      }
+      return upsertRecipeInList(current, nextRecipe);
+    });
   };
+
+  const removeRecipeCollections = (recipeId: string) => {
+    library.setRecipes((current) => removeRecipeFromList(current, recipeId));
+    library.setSearchResults((current) =>
+      current === null ? current : removeRecipeFromList(current, recipeId)
+    );
+    collections.setSavedRecipes((current) =>
+      current === null ? current : removeRecipeFromList(current, recipeId)
+    );
+  };
+
+  const removeCollectionFromLoadedRecipes = (collectionId: string) => {
+    const patch = (recipe: RecipeItem) => {
+      if (!recipe.collectionIds.includes(collectionId)) return recipe;
+      const nextIds = recipe.collectionIds.filter((id) => id !== collectionId);
+      return { ...recipe, collectionIds: nextIds, isSaved: nextIds.length > 0 };
+    };
+
+    library.setRecipes((current) => current.map(patch));
+    library.setSearchResults((current) =>
+      current === null ? current : current.map(patch)
+    );
+    collections.setSavedRecipes((current) =>
+      current === null
+        ? current
+        : current.map(patch).filter(matchesSavedCollectionFilter)
+    );
+    setCollectionSelection((current) =>
+      current.filter((id) => id !== collectionId)
+    );
+  };
+
+  // ─── Toast helper ─────────────────────────────────────────────────────────
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    window.setTimeout(() => setToastMessage(""), 2400);
+  };
+
+  // ─── Navigation helpers ───────────────────────────────────────────────────
+
+  const openLibraryForRecipe = (recipeId: string) => {
+    library.setSearchQuery("");
+    library.setSearchResults(null);
+    library.setSelectedRecipeId(recipeId);
+    setScreen("list");
+  };
+
+  const openCollectionsModal = () => {
+    if (!selectedRecipe) return;
+    setCollectionSelection(selectedRecipe.collectionIds);
+    setCollectionError("");
+    setShowCollectionsModal(true);
+  };
+
+  // ─── Draft helpers ────────────────────────────────────────────────────────
 
   const resetDraft = () => {
     setDraft({
@@ -229,64 +271,168 @@ export function RecipesHomeContainer() {
     setDraftErrors({});
     setAddUrl("");
     setUrlError("");
+    setSummarizeJobStatus(null);
   };
 
-  const fillAiDraft = (
-    sourceUrl: string,
-    response: {
-      sourceType: SourceType;
-      titleDraft: string;
-      ingredientsDraft: string;
-      stepsDraft: string;
-    }
-  ) => {
+  const openManualDraft = (sourceUrl: string) => {
     setDraft({
       sourceUrl,
-      sourceType: response.sourceType,
-      title: response.titleDraft,
-      ingredientsText: response.ingredientsDraft,
-      stepsText: response.stepsDraft,
-      summarySource: "ai"
+      sourceType: inferSourceType(sourceUrl),
+      title: "",
+      ingredientsText: "",
+      stepsText: "",
+      summarySource: "manual"
     });
+    setDraftErrors({});
   };
+
+  // ─── Auth handler ─────────────────────────────────────────────────────────
+
+  const handleAuthSubmit = async () => {
+    setAuthError("");
+    setAuthNotice("");
+    setAuthBusy(true);
+    try {
+      if (authMode === "sign_up") {
+        await signUpWithPassword(authEmail.trim(), authPassword);
+        setAuthNotice(ui.auth.signUpNotice);
+        setAuthPassword("");
+        return;
+      }
+      await signInWithPassword(authEmail.trim(), authPassword);
+      setScreen("list");
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : ui.auth.authFailed);
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  // ─── AI generation handler ────────────────────────────────────────────────
 
   const handleGenerate = async () => {
     const sourceUrl = addUrl.trim();
-
     if (!sourceUrl) {
-      setUrlError("Please add a video URL.");
+      setUrlError(ui.add.urlRequired);
       return;
     }
     if (!/^https?:\/\//i.test(sourceUrl)) {
-      setUrlError("Enter a valid URL starting with http:// or https://");
+      setUrlError(ui.add.urlProtocol);
+      return;
+    }
+    if (inferSourceType(sourceUrl) !== "youtube_shorts") {
+      setUrlError(ui.add.aiOnlySupport);
+      openManualDraft(sourceUrl);
       return;
     }
 
     setUrlError("");
-    setIsGeneratingDraft(true);
-    setScreen("loading");
+    setIsGenerating(true);
+    setSummarizeJobStatus("queued");
 
     try {
-      const response = await summarizeRecipeRequest({ sourceUrl });
-      fillAiDraft(sourceUrl, response);
-      setDraftErrors({});
-      setScreen("review");
-    } catch (error) {
-      setScreen("add");
-      setUrlError(error instanceof Error ? error.message : "AI draft failed. Retry or continue manually.");
+      const handle = await createSummarizeJobRequest({ sourceUrl });
+      let nextStatus = handle.status;
+      let polls = 0;
+
+      while (polls < 15) {
+        await sleep(polls < 10 ? 2000 : 4000);
+        const job = await getSummarizeJobRequest(handle.jobId);
+        nextStatus = job.status;
+        setSummarizeJobStatus(job.status);
+
+        if (job.status === "completed" && job.draft) {
+          setDraft({
+            sourceUrl,
+            sourceType: job.sourceType,
+            title: job.draft.titleDraft,
+            ingredientsText: job.draft.ingredientsDraft,
+            stepsText: job.draft.stepsDraft,
+            summarySource: "ai"
+          });
+          setDraftErrors({});
+          return;
+        }
+
+        if (job.status === "insufficient_context") {
+          setUrlError(job.error?.message ?? ui.add.insufficientContext);
+          openManualDraft(sourceUrl);
+          return;
+        }
+
+        if (job.status === "failed") {
+          setUrlError(job.error?.message ?? ui.add.aiFailed);
+          openManualDraft(sourceUrl);
+          return;
+        }
+
+        polls += 1;
+      }
+
+      setUrlError(
+        nextStatus === "queued" ||
+          nextStatus === "extracting" ||
+          nextStatus === "summarizing"
+          ? ui.add.delayed
+          : ui.add.aiFailed
+      );
+      openManualDraft(sourceUrl);
+    } catch (err) {
+      if (!isAbortError(err)) {
+        setUrlError(err instanceof Error ? err.message : ui.add.aiFailed);
+        openManualDraft(sourceUrl);
+      }
     } finally {
-      setIsGeneratingDraft(false);
+      setIsGenerating(false);
+      setSummarizeJobStatus(null);
     }
   };
 
-  const handleSaveDraft = async () => {
-    const errors = validateDraft(draft);
-    setDraftErrors(errors);
+  // ─── Save URL only ────────────────────────────────────────────────────────
 
-    if (Object.keys(errors).length > 0) {
+  const handleSaveUrlOnly = async () => {
+    const sourceUrl = addUrl.trim();
+    if (!sourceUrl) {
+      setUrlError(ui.add.urlRequired);
+      return;
+    }
+    if (!/^https?:\/\//i.test(sourceUrl)) {
+      setUrlError(ui.add.urlProtocol);
       return;
     }
 
+    setUrlError("");
+    setIsSavingUrlOnly(true);
+
+    try {
+      const created = await saveRecipeUrlRequest({
+        sourceUrl,
+        title:
+          draft.sourceUrl.trim() === sourceUrl
+            ? draft.title.trim() || undefined
+            : undefined,
+        language
+      });
+      const next = toRecipeItem(created);
+      upsertRecipeCollections(next, { insertIntoBase: true });
+      resetDraft();
+      openLibraryForRecipe(next.id);
+      showToast(ui.add.saveUrlOnlySuccess);
+    } catch (err) {
+      setUrlError(
+        err instanceof Error ? err.message : ui.add.saveUrlOnlyFailed
+      );
+    } finally {
+      setIsSavingUrlOnly(false);
+    }
+  };
+
+  // ─── Save draft (AI or manual) ────────────────────────────────────────────
+
+  const handleSaveDraft = async () => {
+    const errors = validateDraft(draft, language);
+    setDraftErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     try {
       const created = await createRecipeRequest({
         sourceUrl: draft.sourceUrl.trim(),
@@ -296,29 +442,25 @@ export function RecipesHomeContainer() {
         stepsText: draft.stepsText.trim(),
         summarySource: draft.summarySource
       });
-
-      const nextRecipe = toRecipe(created);
-      setRecipes((current) => [nextRecipe, ...current]);
-      setSelectedRecipeId(nextRecipe.id);
-      setScreen("detail");
-      showToast("Recipe saved");
+      const next = toRecipeItem(created);
+      upsertRecipeCollections(next, { insertIntoBase: true });
       resetDraft();
-    } catch (error) {
-      setDraftErrors((current) => ({
-        ...current,
-        title: error instanceof Error ? error.message : "Failed to save recipe."
+      openLibraryForRecipe(next.id);
+      showToast(ui.actions.recipeSaved);
+    } catch (err) {
+      setDraftErrors((c) => ({
+        ...c,
+        title: err instanceof Error ? err.message : ui.actions.saveFailed
       }));
     }
   };
 
+  // ─── Save edit ────────────────────────────────────────────────────────────
+
   const handleSaveEdit = async () => {
-    const errors = validateDraft(draft);
+    const errors = validateDraft(draft, language);
     setDraftErrors(errors);
-
-    if (Object.keys(errors).length > 0 || !selectedRecipe) {
-      return;
-    }
-
+    if (Object.keys(errors).length > 0 || !selectedRecipe) return;
     try {
       const updated = await updateRecipeRequest(selectedRecipe.id, {
         sourceUrl: draft.sourceUrl.trim(),
@@ -328,25 +470,52 @@ export function RecipesHomeContainer() {
         stepsText: draft.stepsText.trim(),
         summarySource: draft.summarySource
       });
-
-      const nextRecipe = toRecipe(updated);
-      setRecipes((current) => current.map((recipe) => (recipe.id === selectedRecipe.id ? nextRecipe : recipe)));
-      setSelectedRecipeId(nextRecipe.id);
+      const next = toRecipeItem(updated);
+      upsertRecipeCollections(next);
+      library.setSelectedRecipeId(next.id);
       setScreen("detail");
-      showToast("Recipe updated");
-    } catch (error) {
-      setDraftErrors((current) => ({
-        ...current,
-        title: error instanceof Error ? error.message : "Failed to update recipe."
+      showToast(ui.edit.success);
+    } catch (err) {
+      setDraftErrors((c) => ({
+        ...c,
+        title: err instanceof Error ? err.message : ui.edit.failure
       }));
     }
   };
 
-  const openEdit = () => {
-    if (!selectedRecipe) {
-      return;
-    }
+  // ─── Toggle save ──────────────────────────────────────────────────────────
 
+  const handleToggleSave = async () => {
+    if (!selectedRecipe) return;
+    const next = !selectedRecipe.isSaved;
+    const optimisticRecipe = {
+      ...selectedRecipe,
+      isSaved: next,
+      collectionIds: next
+        ? selectedRecipe.collectionIds.length > 0
+          ? selectedRecipe.collectionIds
+          : collections.defaultCollectionId
+            ? [collections.defaultCollectionId]
+            : []
+        : []
+    };
+    upsertRecipeCollections(optimisticRecipe);
+    try {
+      const updated = await toggleSaveRecipeRequest(selectedRecipe.id, next);
+      const nextRecipe = toRecipeItem(updated);
+      upsertRecipeCollections(nextRecipe);
+      await collections.refreshCollections();
+      await collections.refreshSavedRecipes();
+      showToast(next ? ui.actions.savedOn : ui.actions.unsaved);
+    } catch {
+      upsertRecipeCollections(selectedRecipe);
+    }
+  };
+
+  // ─── Open edit ────────────────────────────────────────────────────────────
+
+  const openEdit = () => {
+    if (!selectedRecipe) return;
     setDraft({
       sourceUrl: selectedRecipe.sourceUrl,
       sourceType: selectedRecipe.sourceType,
@@ -359,382 +528,403 @@ export function RecipesHomeContainer() {
     setScreen("edit");
   };
 
-  const handleDelete = async () => {
-    if (!selectedRecipe) {
-      return;
-    }
+  // ─── Delete recipe ────────────────────────────────────────────────────────
 
+  const handleDelete = async () => {
+    if (!selectedRecipe) return;
     try {
       await deleteRecipeRequest(selectedRecipe.id);
-      const remaining = recipes.filter((recipe) => recipe.id !== selectedRecipe.id);
-      setRecipes(remaining);
-      setSelectedRecipeId(remaining[0]?.id ?? "");
+      const remaining = removeRecipeFromList(library.recipes, selectedRecipe.id);
+      removeRecipeCollections(selectedRecipe.id);
+      await collections.refreshCollections();
+      await collections.refreshSavedRecipes();
+      library.setSelectedRecipeId(remaining[0]?.id ?? "");
       setShowDeleteModal(false);
       setScreen("list");
-      showToast("Recipe deleted");
-    } catch (error) {
-      setRecipesError(error instanceof Error ? error.message : "Failed to delete recipe.");
+      showToast(ui.actions.deleted);
+    } catch (err) {
+      library.setRecipesError(
+        err instanceof Error ? err.message : ui.actions.deleteFailed
+      );
       setShowDeleteModal(false);
     }
   };
 
-  return (
-    <main className="min-h-screen bg-background px-4 py-6 text-foreground md:px-6 md:py-8">
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-5xl flex-col justify-center space-y-6">
-        {screen === "auth" ? (
-          <Card className="mx-auto max-w-md rounded-2xl p-6 md:p-8">
-            <div className="space-y-2 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-                ✦
-              </div>
-              <h1 className="text-3xl font-semibold tracking-tight">PantryClip</h1>
-              <p className="text-sm text-muted-foreground">
-                {authMode === "sign_in"
-                  ? "Sign in to manage your saved recipe clips."
-                  : "Create an account to save recipe clips as structured notes."}
-              </p>
-            </div>
+  // ─── Collection CRUD ──────────────────────────────────────────────────────
 
-            <div className="mt-6 space-y-4">
-              <div className="space-y-2">
-                <Label>Email address</Label>
-                <Input className="h-11 rounded-xl" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Password</Label>
-                <Input className="h-11 rounded-xl" type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} />
-              </div>
-              <Button className="h-11 w-full" onClick={() => void handleAuthSubmit()} disabled={!isReady || authBusy} type="button">
-                {!isReady ? "Loading..." : authBusy ? "Working..." : authMode === "sign_in" ? "Sign in" : "Create account"}
-              </Button>
-              {authError ? <p className="text-sm text-destructive">{authError}</p> : null}
-              {authNotice ? <p className="text-sm text-muted-foreground">{authNotice}</p> : null}
-              <Button
-                className="h-11 w-full"
-                variant="ghost"
-                type="button"
-                onClick={() => {
-                  setAuthMode((current) => (current === "sign_in" ? "sign_up" : "sign_in"));
-                  setAuthError("");
-                  setAuthNotice("");
-                }}
-              >
-                {authMode === "sign_in" ? "Need an account? Sign up" : "Already have an account? Sign in"}
-              </Button>
-            </div>
-          </Card>
-        ) : null}
+  const openCreateCollectionModal = () => {
+    setCollectionModalMode("create");
+    setEditingCollection(null);
+    setCollectionName("");
+    setCollectionError("");
+    setShowEditCollectionsModal(false);
+    setPendingDeleteCollection(null);
+    setShowCreateCollectionModal(true);
+  };
 
-        {screen === "list" ? (
-          <Card className="rounded-2xl p-6 md:p-8">
-            <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-              <div className="space-y-4">
-                <div className="rounded-2xl border border-border p-4 md:p-6">
-                  <div className="space-y-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h1 className="text-2xl font-semibold tracking-tight">Recipes</h1>
-                      <p className="text-sm text-muted-foreground">{recipes.length} saved recipes</p>
-                    </div>
-                    <Button className="h-11" variant="outline" onClick={() => void signOut()} type="button">
-                      Sign out
-                    </Button>
-                  </div>
-                  <Button
-                    className="h-11 w-full"
-                    onClick={() => {
-                      resetDraft();
-                      setScreen("add");
-                    }}
-                    type="button"
-                  >
-                    Add recipe
-                  </Button>
-                  <Input className="h-11 rounded-xl" placeholder="Search by title" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
-                    {recipesError ? <p className="text-sm text-destructive">{recipesError}</p> : null}
-                  </div>
-                </div>
+  const openRenameCollectionModal = (collection: RecipeCollectionSummary) => {
+    setCollectionModalMode("rename");
+    setEditingCollection(collection);
+    setCollectionName(collection.name);
+    setCollectionError("");
+    setShowEditCollectionsModal(false);
+    setShowCreateCollectionModal(true);
+  };
 
-                {recipes.length === 0 ? (
-                  <div className="rounded-2xl border border-border p-4 md:p-6">
-                  <h2 className="font-semibold">No recipes yet</h2>
-                  <p className="mt-2 text-sm text-muted-foreground">Start by adding a recipe link or create one manually.</p>
-                  </div>
-                ) : null}
+  const handleSubmitCollection = async () => {
+    const trimmedName = collectionName.trim();
+    if (!trimmedName) {
+      setCollectionError(
+        language === "ko"
+          ? "컬렉션 이름을 입력해주세요."
+          : "Please enter a collection name."
+      );
+      return;
+    }
 
-                {recipes.length > 0 && filteredRecipes.length === 0 ? (
-                  <div className="rounded-2xl border border-border p-4 md:p-6">
-                  <h2 className="font-semibold">No matches</h2>
-                  <p className="mt-2 text-sm text-muted-foreground">Try a different search term.</p>
-                  </div>
-                ) : null}
+    setCollectionError("");
+    setIsCreatingCollection(true);
 
-                <div className="space-y-3">
-                  {filteredRecipes.map((recipe) => (
-                    <button
-                      key={recipe.id}
-                      className={`block w-full rounded-2xl border p-4 md:p-6 text-left transition ${recipe.id === selectedRecipeId ? "border-foreground" : "border-border"}`}
-                      onClick={() => {
-                        setSelectedRecipeId(recipe.id);
-                        setScreen("detail");
-                      }}
-                      type="button"
-                    >
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <Badge variant="outline">{sourceBadge(recipe.sourceType)}</Badge>
-                          <span className="text-xs text-muted-foreground">{recipe.summarySource}</span>
-                        </div>
-                        <h2 className="font-semibold">{recipe.title}</h2>
-                        <p className="line-clamp-2 text-sm text-muted-foreground">{recipe.sourceUrl}</p>
-                        <p className="text-xs text-muted-foreground">{recipe.updatedAtLabel}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
+    try {
+      if (collectionModalMode === "rename" && editingCollection) {
+        await updateRecipeCollectionRequest(editingCollection.id, {
+          name: trimmedName
+        });
+        await collections.refreshCollections();
+        setCollectionName("");
+        setEditingCollection(null);
+        setShowCreateCollectionModal(false);
+        showToast(ui.actions.collectionRenamed);
+        return;
+      }
 
-              <div className="rounded-2xl border border-border p-4 md:p-6">
-                {selectedRecipe ? (
-                  <div className="space-y-6">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline">{sourceBadge(selectedRecipe.sourceType)}</Badge>
-                          <span className="text-sm text-muted-foreground">{selectedRecipe.summarySource}</span>
-                        </div>
-                        <h2 className="text-3xl font-semibold tracking-tight">{selectedRecipe.title}</h2>
-                        <p className="text-sm text-muted-foreground">{selectedRecipe.sourceUrl}</p>
-                      </div>
-                      <div className="flex gap-2">
-                    <Button className="h-11" variant="outline" onClick={openEdit} type="button">
-                          Edit
-                        </Button>
-                      <Button className="h-11" variant="destructive" onClick={() => setShowDeleteModal(true)} type="button">
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
+      const created = await createRecipeCollectionRequest({ name: trimmedName });
+      await collections.refreshCollections();
+      setCollectionName("");
+      setShowCreateCollectionModal(false);
+      collections.setSelectedSavedCollectionId(created.id);
+      showToast(ui.actions.collectionCreated);
+    } catch (err) {
+      setCollectionError(
+        err instanceof Error ? err.message : ui.actions.saveFailed
+      );
+    } finally {
+      setIsCreatingCollection(false);
+    }
+  };
 
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="rounded-2xl border border-border p-4 md:p-6">
-                        <h3 className="font-semibold">Ingredients</h3>
-                        <ul className="mt-3 space-y-2 text-sm">
-                          {toIngredientItems(selectedRecipe.ingredientsText).map((ingredient) => (
-                            <li key={ingredient}>{ingredient}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div className="rounded-2xl border border-border p-4 md:p-6">
-                        <h3 className="font-semibold">Steps</h3>
-                        <ol className="mt-3 space-y-2 text-sm">
-                          {toStepItems(selectedRecipe.stepsText).map((step, index) => (
-                            <li key={step}>
-                              {index + 1}. {step}
-                            </li>
-                          ))}
-                        </ol>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-sm text-muted-foreground">Select a recipe to view details.</div>
-                )}
-              </div>
-            </div>
-          </Card>
-        ) : null}
+  const handleDeleteCollection = async () => {
+    if (!pendingDeleteCollection) return;
 
-        {screen === "add" ? (
-          <Card className="mx-auto max-w-2xl rounded-2xl p-6 md:p-8">
-            <div className="space-y-2">
-              <h1 className="text-2xl font-semibold tracking-tight">Add recipe</h1>
-              <p className="text-sm text-muted-foreground">Paste a video link to generate a draft, then review and edit it before saving.</p>
-            </div>
-            <div className="mt-6 space-y-4">
-              <div className="space-y-2">
-                <Label>Video URL</Label>
-                <Input className="h-11 rounded-xl" placeholder="https://www.youtube.com/shorts/..." value={addUrl} onChange={(event) => setAddUrl(event.target.value)} />
-                {urlError ? <p className="text-sm text-destructive">{urlError}</p> : null}
-              </div>
-              <Button className="h-11 w-full" onClick={() => void handleGenerate()} type="button" disabled={isGeneratingDraft}>
-                {isGeneratingDraft ? "Generating..." : "Generate with AI"}
-              </Button>
-              <Button className="h-11" variant="ghost" onClick={() => setScreen("list")} type="button">
-                Back to list
-              </Button>
-            </div>
-          </Card>
-        ) : null}
+    setCollectionError("");
+    setIsDeletingCollection(true);
 
-        {screen === "loading" ? (
-          <Card className="mx-auto max-w-lg rounded-2xl p-6 text-center md:p-8">
-            <h1 className="text-2xl font-semibold tracking-tight">Generating draft</h1>
-            <p className="mt-2 text-sm text-muted-foreground">Preparing a recipe draft from the link.</p>
-          </Card>
-        ) : null}
+    try {
+      await deleteRecipeCollectionRequest(pendingDeleteCollection.id);
+      const nextCollectionId =
+        collections.selectedSavedCollectionId === pendingDeleteCollection.id
+          ? ALL_SAVED_COLLECTION_ID
+          : collections.selectedSavedCollectionId;
 
-        {(screen === "review" || screen === "edit") && (
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <Card className="rounded-2xl p-6 md:p-8">
-              <div className="space-y-2">
-                <h1 className="text-2xl font-semibold tracking-tight">{screen === "review" ? "Review draft" : "Edit recipe"}</h1>
-                <p className="text-sm text-muted-foreground">Check the recipe before saving.</p>
-              </div>
+      removeCollectionFromLoadedRecipes(pendingDeleteCollection.id);
+      setPendingDeleteCollection(null);
+      collections.setSelectedSavedCollectionId(nextCollectionId);
+      await collections.refreshCollections();
+      await collections.refreshSavedRecipes(nextCollectionId);
+      showToast(ui.actions.collectionDeleted);
+    } catch (err) {
+      setCollectionError(
+        err instanceof Error ? err.message : ui.actions.deleteFailed
+      );
+    } finally {
+      setIsDeletingCollection(false);
+    }
+  };
 
-              <div className="mt-6 space-y-4">
-                <div className="space-y-2">
-                  <Label>Source URL</Label>
-                  <Input
-                    className="h-11 rounded-xl"
-                    value={draft.sourceUrl}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        sourceUrl: event.target.value,
-                        sourceType: inferSourceType(event.target.value)
-                      }))
-                    }
-                  />
-                  {draftErrors.sourceUrl ? <p className="text-sm text-destructive">{draftErrors.sourceUrl}</p> : null}
-                </div>
-                <div className="space-y-2">
-                  <Label>Title</Label>
-                  <Input className="h-11 rounded-xl" value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} />
-                  {draftErrors.title ? <p className="text-sm text-destructive">{draftErrors.title}</p> : null}
-                </div>
-                <div className="space-y-2">
-                  <Label>Ingredients</Label>
-                  <Textarea
-                    className="min-h-[180px] rounded-xl"
-                    value={draft.ingredientsText}
-                    onChange={(event) => setDraft((current) => ({ ...current, ingredientsText: event.target.value }))}
-                  />
-                  {draftErrors.ingredientsText ? <p className="text-sm text-destructive">{draftErrors.ingredientsText}</p> : null}
-                </div>
-                <div className="space-y-2">
-                  <Label>Steps</Label>
-                  <Textarea
-                    className="min-h-[220px] rounded-xl"
-                    value={draft.stepsText}
-                    onChange={(event) => setDraft((current) => ({ ...current, stepsText: event.target.value }))}
-                  />
-                  {draftErrors.stepsText ? <p className="text-sm text-destructive">{draftErrors.stepsText}</p> : null}
-                </div>
-              </div>
+  const handleSaveRecipeCollections = async () => {
+    if (!selectedRecipe) return;
 
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                <Button className="h-11 flex-1" onClick={() => void (screen === "review" ? handleSaveDraft() : handleSaveEdit())} type="button">
-                  {screen === "review" ? "Save recipe" : "Save changes"}
-                </Button>
-                <Button className="h-11 flex-1" variant="outline" onClick={() => setScreen(screen === "review" ? "add" : "detail")} type="button">
-                  Cancel
-                </Button>
-              </div>
-            </Card>
+    setCollectionError("");
+    setIsUpdatingCollections(true);
 
-            <div className="rounded-2xl border border-border p-4 md:p-6">
-              <h2 className="font-semibold">Preview</h2>
-              <div className="mt-4 space-y-4 text-sm">
-                <div>
-                  <p className="font-medium">{draft.title || "Untitled recipe"}</p>
-                  <p className="mt-1 text-muted-foreground">{draft.sourceUrl || "No source URL"}</p>
-                </div>
-                <div>
-                  <p className="font-medium">Ingredients</p>
-                  <ul className="mt-2 space-y-1 text-muted-foreground">
-                    {toIngredientItems(draft.ingredientsText).map((ingredient) => (
-                      <li key={ingredient}>{ingredient}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <p className="font-medium">Steps</p>
-                  <ol className="mt-2 space-y-1 text-muted-foreground">
-                    {toStepItems(draft.stepsText).map((step, index) => (
-                      <li key={step}>
-                        {index + 1}. {step}
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              </div>
-            </div>
+    try {
+      const updated = await setRecipeCollectionsRequest(selectedRecipe.id, {
+        collectionIds: collectionSelection
+      });
+      const nextRecipe = toRecipeItem(updated);
+      upsertRecipeCollections(nextRecipe);
+      await collections.refreshCollections();
+      await collections.refreshSavedRecipes();
+      library.setSelectedRecipeId(nextRecipe.id);
+      setShowCollectionsModal(false);
+      showToast(
+        nextRecipe.isSaved ? ui.actions.collectionsUpdated : ui.actions.unsaved
+      );
+    } catch (err) {
+      setCollectionError(
+        err instanceof Error ? err.message : ui.actions.saveFailed
+      );
+    } finally {
+      setIsUpdatingCollections(false);
+    }
+  };
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  if (!isReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-muted/60">
+        <div className="flex flex-col items-center gap-3">
+          <IcBook className="h-8 w-8 text-primary" />
+          <div className="h-1 w-24 overflow-hidden rounded-full bg-muted">
+            <div className="h-full animate-pulse rounded-full bg-primary" />
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen justify-center bg-muted/60">
+      <div className="relative flex h-screen w-full max-w-[390px] flex-col overflow-hidden rounded-[28px] bg-background shadow-2xl">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+          {screen === "auth" && (
+            <AuthScreen
+              language={language}
+              ui={ui}
+              isReady={isReady}
+              authMode={authMode}
+              authEmail={authEmail}
+              authPassword={authPassword}
+              authError={authError}
+              authNotice={authNotice}
+              authBusy={authBusy}
+              showPassword={showPassword}
+              setAuthEmail={setAuthEmail}
+              setAuthPassword={setAuthPassword}
+              setShowPassword={setShowPassword}
+              setAuthMode={setAuthMode}
+              setAuthError={setAuthError}
+              setAuthNotice={setAuthNotice}
+              onSubmit={() => void handleAuthSubmit()}
+            />
+          )}
+
+          {screen === "list" && (
+            <LibraryScreen
+              language={language}
+              ui={ui}
+              recipes={library.recipes}
+              libraryRecipes={library.libraryRecipes}
+              searchQuery={library.searchQuery}
+              isSearchActive={library.isSearchActive}
+              isInitialRecipesLoading={library.isInitialRecipesLoading}
+              isLibrarySearchLoading={library.isLibrarySearchLoading}
+              recipesError={library.recipesError}
+              setSearchQuery={library.setSearchQuery}
+              onAddRecipe={() => {
+                resetDraft();
+                setScreen("add");
+              }}
+              onSelectRecipe={(id) => {
+                library.setSelectedRecipeId(id);
+                setScreen("detail");
+              }}
+            />
+          )}
+
+          {screen === "add" && (
+            <AddRecipeScreen
+              language={language}
+              ui={ui}
+              addUrl={addUrl}
+              urlError={urlError}
+              isGenerating={isGenerating}
+              isSavingUrlOnly={isSavingUrlOnly}
+              summarizeJobStatus={summarizeJobStatus}
+              hasDraft={hasDraft}
+              draft={draft}
+              draftErrors={draftErrors}
+              setAddUrl={setAddUrl}
+              setDraft={setDraft}
+              onGenerate={() => void handleGenerate()}
+              onSaveUrlOnly={() => void handleSaveUrlOnly()}
+              onSaveAiDraft={() => void handleSaveDraft()}
+              onCancelDraft={resetDraft}
+            />
+          )}
+
+          {screen === "review" && (
+            <ManualEntryScreen
+              language={language}
+              ui={ui}
+              draft={draft}
+              draftErrors={draftErrors}
+              setDraft={setDraft}
+              onSave={() => void handleSaveDraft()}
+              onBack={() => setScreen("add")}
+            />
+          )}
+
+          {screen === "edit" && (
+            <EditScreen
+              language={language}
+              ui={ui}
+              draft={draft}
+              draftErrors={draftErrors}
+              setDraft={setDraft}
+              onSave={() => void handleSaveEdit()}
+              onBack={() => setScreen("detail")}
+            />
+          )}
+
+          {screen === "detail" && selectedRecipe && (
+            <DetailScreen
+              language={language}
+              ui={ui}
+              recipe={selectedRecipe}
+              onBack={() => setScreen("list")}
+              onToggleSave={() => void handleToggleSave()}
+              onOpenCollections={openCollectionsModal}
+              onEdit={openEdit}
+              onDelete={() => setShowDeleteModal(true)}
+            />
+          )}
+
+          {screen === "scrap" && (
+            <SavedScreen
+              language={language}
+              ui={ui}
+              collections={collections.collections}
+              allSavedRecipesCount={collections.allSavedRecipesCount}
+              selectedSavedCollectionId={collections.selectedSavedCollectionId}
+              savedCollectionRecipes={savedCollectionRecipes}
+              isCollectionsLoading={collections.isCollectionsLoading}
+              isSavedRecipesLoading={collections.isSavedRecipesLoading}
+              isSavedEmpty={isSavedEmpty}
+              savedError={collections.savedError}
+              ALL_SAVED_COLLECTION_ID={ALL_SAVED_COLLECTION_ID}
+              setSelectedSavedCollectionId={
+                collections.setSelectedSavedCollectionId
+              }
+              onSelectRecipe={(id) => {
+                library.setSelectedRecipeId(id);
+                setScreen("detail");
+              }}
+              onCreateCollection={openCreateCollectionModal}
+              onManageCollections={() => {
+                setCollectionError("");
+                setShowEditCollectionsModal(true);
+              }}
+            />
+          )}
+
+          {screen === "profile" && (
+            <ProfileScreen
+              language={language}
+              ui={ui}
+              session={session}
+              theme={theme}
+              allSavedRecipesCount={collections.allSavedRecipesCount}
+              setLanguage={setLanguage}
+              setTheme={setTheme}
+              onSignOut={() => void signOut()}
+            />
+          )}
+        </div>
+
+        {!!session && screen !== "auth" && (
+          <BottomNav
+            activeTab={activeTab}
+            language={language}
+            onLibrary={() => setScreen("list")}
+            onAdd={() => {
+              resetDraft();
+              setScreen("add");
+            }}
+            onScrap={() => setScreen("scrap")}
+            onProfile={() => setScreen("profile")}
+          />
         )}
 
-        {screen === "detail" && selectedRecipe ? (
-          <Card className="rounded-2xl p-6 md:p-8">
-            <div className="flex items-center justify-between gap-3">
-              <Button className="h-11" variant="outline" onClick={() => setScreen("list")} type="button">
-                Back
-              </Button>
-              <div className="flex gap-2">
-                <Button className="h-11" variant="outline" onClick={openEdit} type="button">
-                  Edit
-                </Button>
-                <Button className="h-11" variant="destructive" onClick={() => setShowDeleteModal(true)} type="button">
-                  Delete
-                </Button>
-              </div>
-            </div>
+        {showDeleteModal && selectedRecipe && (
+          <DeleteRecipeModal
+            ui={ui}
+            recipe={selectedRecipe}
+            onConfirm={() => void handleDelete()}
+            onCancel={() => setShowDeleteModal(false)}
+          />
+        )}
 
-            <div className="mt-6 space-y-4">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">{sourceBadge(selectedRecipe.sourceType)}</Badge>
-                <span className="text-sm text-muted-foreground">{selectedRecipe.updatedAtLabel}</span>
-              </div>
-              <div>
-                <h1 className="text-3xl font-semibold tracking-tight">{selectedRecipe.title}</h1>
-                <p className="mt-2 text-sm text-muted-foreground">{selectedRecipe.sourceUrl}</p>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-2xl border border-border p-4 md:p-6">
-                  <h2 className="font-semibold">Ingredients</h2>
-                  <ul className="mt-3 space-y-2 text-sm">
-                    {toIngredientItems(selectedRecipe.ingredientsText).map((ingredient) => (
-                      <li key={ingredient}>{ingredient}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="rounded-2xl border border-border p-4 md:p-6">
-                  <h2 className="font-semibold">Steps</h2>
-                  <ol className="mt-3 space-y-2 text-sm">
-                    {toStepItems(selectedRecipe.stepsText).map((step, index) => (
-                      <li key={step}>
-                        {index + 1}. {step}
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              </div>
-            </div>
-          </Card>
-        ) : null}
+        {showCreateCollectionModal && (
+          <CollectionModal
+            ui={ui}
+            mode={collectionModalMode}
+            collectionName={collectionName}
+            collectionError={collectionError}
+            isSubmitting={isCreatingCollection}
+            setCollectionName={setCollectionName}
+            onConfirm={() => void handleSubmitCollection()}
+            onCancel={() => {
+              setShowCreateCollectionModal(false);
+              setEditingCollection(null);
+              setCollectionError("");
+            }}
+          />
+        )}
+
+        {showEditCollectionsModal && (
+          <EditCollectionsModal
+            ui={ui}
+            collections={collections.collections}
+            collectionError={collectionError}
+            onRename={openRenameCollectionModal}
+            onDelete={(collection) => {
+              setCollectionError("");
+              setPendingDeleteCollection(collection);
+              setShowEditCollectionsModal(false);
+            }}
+            onCreateCollection={openCreateCollectionModal}
+            onClose={() => {
+              setShowEditCollectionsModal(false);
+              setCollectionError("");
+            }}
+          />
+        )}
+
+        {showCollectionsModal && selectedRecipe && (
+          <ManageRecipeCollectionsModal
+            ui={ui}
+            collections={collections.collections}
+            collectionSelection={collectionSelection}
+            collectionError={collectionError}
+            isUpdating={isUpdatingCollections}
+            setCollectionSelection={setCollectionSelection}
+            onSave={() => void handleSaveRecipeCollections()}
+            onClose={() => setShowCollectionsModal(false)}
+          />
+        )}
+
+        {pendingDeleteCollection && (
+          <DeleteCollectionModal
+            ui={ui}
+            collection={pendingDeleteCollection}
+            collectionError={collectionError}
+            isDeleting={isDeletingCollection}
+            onConfirm={() => void handleDeleteCollection()}
+            onCancel={() => {
+              setPendingDeleteCollection(null);
+              setCollectionError("");
+            }}
+          />
+        )}
+
+        {toastMessage && (
+          <div className="absolute bottom-24 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-full bg-foreground px-5 py-2.5 text-sm font-semibold text-background shadow-lg">
+            {toastMessage}
+          </div>
+        )}
       </div>
-
-      {showDeleteModal && selectedRecipe ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 px-4">
-          <Card className="w-full max-w-md rounded-2xl p-6 md:p-8">
-            <h2 className="text-xl font-semibold tracking-tight">Delete recipe?</h2>
-            <p className="mt-2 text-sm text-muted-foreground">This will remove “{selectedRecipe.title}” from your saved recipes.</p>
-            <div className="mt-6 flex gap-3">
-              <Button className="h-11 flex-1" variant="outline" onClick={() => setShowDeleteModal(false)} type="button">
-                Cancel
-              </Button>
-              <Button className="h-11 flex-1" variant="destructive" onClick={() => void handleDelete()} type="button">
-                Delete
-              </Button>
-            </div>
-          </Card>
-        </div>
-      ) : null}
-
-      {toastMessage ? (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-foreground px-4 py-2 text-sm text-background">
-          {toastMessage}
-        </div>
-      ) : null}
-    </main>
+    </div>
   );
 }
