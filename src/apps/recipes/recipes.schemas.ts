@@ -27,6 +27,11 @@ export const createRecipeSchema = z.object({
   aiConfidence: z.number().min(0).max(1).nullable().optional()
 });
 
+export const saveRecipeUrlSchema = z.object({
+  sourceUrl: z.string().url(),
+  title: z.string().trim().max(140).optional()
+});
+
 export const summarizeRecipeSchema = z.object({
   sourceUrl: z.string().url()
 });

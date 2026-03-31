@@ -9,6 +9,7 @@ import {
   deleteRecipe as deleteRecipeRequest,
   getSummarizeJob as getSummarizeJobRequest,
   listRecipes as listRecipesRequest,
+  saveRecipeUrl as saveRecipeUrlRequest,
   toggleSaveRecipe as toggleSaveRecipeRequest,
   updateRecipe as updateRecipeRequest
 } from "@/src/apis/recipes";
@@ -455,6 +456,7 @@ export function RecipesHomeContainer() {
   const [urlError, setUrlError]               = useState("");
   const [recipesError, setRecipesError]       = useState("");
   const [isGenerating, setIsGenerating]       = useState(false);
+  const [isSavingUrlOnly, setIsSavingUrlOnly] = useState(false);
   const [summarizeJobStatus, setSummarizeJobStatus] = useState<SummarizeJobStatus | null>(null);
   const [draftErrors, setDraftErrors]         = useState<Partial<Record<keyof RecipeDraft, string>>>({});
   const [toastMessage, setToastMessage]       = useState("");
@@ -601,6 +603,32 @@ export function RecipesHomeContainer() {
       setUrlError(err instanceof Error ? err.message : "AI 초안 생성에 실패했습니다.");
       openManualDraft(sourceUrl);
     } finally { setIsGenerating(false); setSummarizeJobStatus(null); }
+  };
+
+  const handleSaveUrlOnly = async () => {
+    const sourceUrl = addUrl.trim();
+    if (!sourceUrl) { setUrlError("URL을 입력해주세요."); return; }
+    if (!/^https?:\/\//i.test(sourceUrl)) { setUrlError("http:// 또는 https://로 시작하는 URL을 입력해주세요."); return; }
+
+    setUrlError("");
+    setIsSavingUrlOnly(true);
+
+    try {
+      const created = await saveRecipeUrlRequest({
+        sourceUrl,
+        title: draft.sourceUrl.trim() === sourceUrl ? draft.title.trim() || undefined : undefined
+      });
+      const next = toRecipe(created);
+      setRecipes((c) => [next, ...c]);
+      setSelectedRecipeId(next.id);
+      resetDraft();
+      setScreen("detail");
+      showToast("링크가 저장되었습니다. 세부 내용은 나중에 수정할 수 있어요.");
+    } catch (err) {
+      setUrlError(err instanceof Error ? err.message : "URL 저장에 실패했습니다.");
+    } finally {
+      setIsSavingUrlOnly(false);
+    }
   };
 
   // Save AI draft directly from inline review card
@@ -982,10 +1010,21 @@ export function RecipesHomeContainer() {
                     type="button"
                     className="mt-3 h-12 w-full gap-2.5 rounded-xl text-[15px] font-bold"
                     onClick={() => void handleGenerate()}
-                    disabled={isGenerating}
+                    disabled={isGenerating || isSavingUrlOnly}
                   >
                     <IcBolt className="h-[18px] w-[18px]" />
                     {isGenerating ? toSummarizeStatusLabel(summarizeJobStatus) : "Generate with AI"}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-3 h-12 w-full gap-2.5 rounded-xl text-[15px] font-bold"
+                    onClick={() => void handleSaveUrlOnly()}
+                    disabled={isGenerating || isSavingUrlOnly}
+                  >
+                    <IcBookmark className="h-[18px] w-[18px]" />
+                    {isSavingUrlOnly ? "Saving URL..." : "Save URL Only"}
                   </Button>
 
                   {/* Skeleton loading state */}
@@ -1247,28 +1286,40 @@ export function RecipesHomeContainer() {
                 {/* Ingredients */}
                 <div className="mt-6">
                   <Label>Ingredients</Label>
-                  <div className="mt-3 space-y-1.5">
-                    {toIngredientItems(selectedRecipe.ingredientsText).map((item) => (
-                      <div key={item} className="flex items-center justify-between rounded-xl bg-card px-4 py-3">
-                        <span className="text-sm">{item}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {toIngredientItems(selectedRecipe.ingredientsText).length > 0 ? (
+                    <div className="mt-3 space-y-1.5">
+                      {toIngredientItems(selectedRecipe.ingredientsText).map((item) => (
+                        <div key={item} className="flex items-center justify-between rounded-xl bg-card px-4 py-3">
+                          <span className="text-sm">{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-3 rounded-xl bg-card px-4 py-4 text-sm text-muted-foreground">
+                      아직 재료가 없습니다. Edit에서 나중에 추가할 수 있어요.
+                    </div>
+                  )}
                 </div>
 
                 {/* Preparation */}
                 <div className="mt-6">
                   <Label>Preparation</Label>
-                  <div className="mt-3 space-y-2">
-                    {toStepItems(selectedRecipe.stepsText).map((step, i) => (
-                      <div key={step} className="flex gap-4 rounded-xl bg-card px-4 py-3.5">
-                        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
-                          {String(i + 1).padStart(2, "0")}
+                  {toStepItems(selectedRecipe.stepsText).length > 0 ? (
+                    <div className="mt-3 space-y-2">
+                      {toStepItems(selectedRecipe.stepsText).map((step, i) => (
+                        <div key={step} className="flex gap-4 rounded-xl bg-card px-4 py-3.5">
+                          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
+                            {String(i + 1).padStart(2, "0")}
+                          </div>
+                          <p className="flex-1 text-sm leading-relaxed">{step}</p>
                         </div>
-                        <p className="flex-1 text-sm leading-relaxed">{step}</p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-3 rounded-xl bg-card px-4 py-4 text-sm text-muted-foreground">
+                      아직 조리 과정이 없습니다. 링크를 먼저 저장하고 나중에 정리해도 됩니다.
+                    </div>
+                  )}
                 </div>
 
                 {/* Edit / Delete */}

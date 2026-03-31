@@ -3,6 +3,7 @@ import type { z } from "zod";
 import {
   createRecipeSchema,
   listRecipesQuerySchema,
+  saveRecipeUrlSchema,
   sourceTypeSchema,
   summarizeDraftResultSchema,
   summarizeJobHandleSchema,
@@ -17,6 +18,7 @@ export type SourceType = z.infer<typeof sourceTypeSchema>;
 export type SummarySource = z.infer<typeof summarySourceSchema>;
 
 export type CreateRecipeInput = z.infer<typeof createRecipeSchema>;
+export type SaveRecipeUrlInput = z.infer<typeof saveRecipeUrlSchema>;
 export type UpdateRecipeInput = z.infer<typeof updateRecipeSchema>;
 export type SummarizeRecipeInput = z.infer<typeof summarizeRecipeSchema>;
 export type SummarizeJobStatus = z.infer<typeof summarizeJobStatusSchema>;
