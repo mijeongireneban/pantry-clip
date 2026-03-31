@@ -23,6 +23,7 @@ export type RecipeDto = {
   summarySource: SummarySource;
   aiConfidence: number | null;
   isSaved: boolean;
+  collectionIds: string[];
   createdAt: string;
   updatedAt: string;
 };

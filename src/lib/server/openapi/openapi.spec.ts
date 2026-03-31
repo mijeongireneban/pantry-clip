@@ -1,4 +1,8 @@
-import { extendZodWithOpenApi,OpenApiGeneratorV3, OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
+import {
+  extendZodWithOpenApi,
+  OpenApiGeneratorV3,
+  OpenAPIRegistry
+} from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
 import {
@@ -22,7 +26,13 @@ const errorResponseSchema = registry.register(
   "ErrorResponse",
   z.object({
     code: z
-      .enum(["UNAUTHORIZED", "FORBIDDEN", "NOT_FOUND", "VALIDATION_ERROR", "INTERNAL_ERROR"])
+      .enum([
+        "UNAUTHORIZED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "INTERNAL_ERROR"
+      ])
       .openapi({ example: "VALIDATION_ERROR" }),
     message: z.string().openapi({ example: "Invalid request" }),
     details: z.unknown().optional()
@@ -34,7 +44,10 @@ const healthStatusSchema = registry.register(
   z.object({
     ok: z.literal(true),
     service: z.string().openapi({ example: "pantry-clip-api" }),
-    timestamp: z.string().datetime().openapi({ example: "2026-03-12T12:00:00.000Z" }),
+    timestamp: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-03-12T12:00:00.000Z" }),
     uptimeSec: z.number().openapi({ example: 123 })
   })
 );
@@ -55,12 +68,15 @@ const recipeSchema = registry.register(
     summarySource: summarySourceOpenApiSchema,
     aiConfidence: z.number().min(0).max(1).nullable(),
     isSaved: z.boolean(),
+    collectionIds: z.array(z.string().uuid()),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime()
   })
 );
 
-const summarizeRecipeRequestSchema = summarizeRecipeSchema.openapi("SummarizeRecipeRequest");
+const summarizeRecipeRequestSchema = summarizeRecipeSchema.openapi(
+  "SummarizeRecipeRequest"
+);
 
 const summarizeJobHandleOpenApiSchema = summarizeJobHandleSchema.openapi(
   "SummarizeJobHandleResponse"
@@ -69,12 +85,19 @@ const summarizeJobResultOpenApiSchema = summarizeJobResultSchema.openapi(
   "SummarizeJobResultResponse"
 );
 
-const createRecipeRequestSchema = createRecipeSchema.openapi("CreateRecipeRequest");
-const saveRecipeUrlRequestSchema = saveRecipeUrlSchema.openapi("SaveRecipeUrlRequest");
-const updateRecipeRequestSchema = updateRecipeSchema.openapi("UpdateRecipeRequest", {
-  description: "At least one field must be provided.",
-  minProperties: 1
-});
+const createRecipeRequestSchema = createRecipeSchema.openapi(
+  "CreateRecipeRequest"
+);
+const saveRecipeUrlRequestSchema = saveRecipeUrlSchema.openapi(
+  "SaveRecipeUrlRequest"
+);
+const updateRecipeRequestSchema = updateRecipeSchema.openapi(
+  "UpdateRecipeRequest",
+  {
+    description: "At least one field must be provided.",
+    minProperties: 1
+  }
+);
 
 const listRecipesResponseSchema = registry.register(
   "ListRecipesResponse",
@@ -92,31 +115,42 @@ const deleteRecipeResponseSchema = registry.register(
 );
 
 const recipeIdParamsSchema = z.object({
-  id: z.string().uuid().openapi({
-    param: {
-      name: "id",
-      in: "path"
-    },
-    example: "11111111-1111-1111-1111-111111111111"
-  })
+  id: z
+    .string()
+    .uuid()
+    .openapi({
+      param: {
+        name: "id",
+        in: "path"
+      },
+      example: "11111111-1111-1111-1111-111111111111"
+    })
 });
 
 const listRecipesQueryOpenApiSchema = z.object({
-  q: z.string().trim().optional().openapi({
-    param: {
-      name: "q",
-      in: "query",
-      description: "Title search query"
-    },
-    example: "pasta"
-  }),
-  cursor: z.string().trim().optional().openapi({
-    param: {
-      name: "cursor",
-      in: "query",
-      description: "Opaque pagination cursor"
-    }
-  }),
+  q: z
+    .string()
+    .trim()
+    .optional()
+    .openapi({
+      param: {
+        name: "q",
+        in: "query",
+        description: "Title search query"
+      },
+      example: "pasta"
+    }),
+  cursor: z
+    .string()
+    .trim()
+    .optional()
+    .openapi({
+      param: {
+        name: "cursor",
+        in: "query",
+        description: "Opaque pagination cursor"
+      }
+    }),
   limit: listRecipesQuerySchema.shape.limit.openapi({
     param: {
       name: "limit",
@@ -237,13 +271,16 @@ registry.registerPath({
   summary: "Get summarize job status",
   request: {
     params: z.object({
-      jobId: z.string().uuid().openapi({
-        param: {
-          name: "jobId",
-          in: "path"
-        },
-        example: "11111111-1111-1111-1111-111111111111"
-      })
+      jobId: z
+        .string()
+        .uuid()
+        .openapi({
+          param: {
+            name: "jobId",
+            in: "path"
+          },
+          example: "11111111-1111-1111-1111-111111111111"
+        })
     })
   },
   responses: {

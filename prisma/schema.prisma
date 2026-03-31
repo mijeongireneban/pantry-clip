@@ -62,12 +62,13 @@ enum SummarizeJobFailureKind {
 }
 
 model User {
-  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email         String         @unique
-  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime       @default(now()) @map("updated_at") @db.Timestamptz(6)
-  recipes       Recipe[]
-  summarizeJobs SummarizeJob[]
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email             String             @unique
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @default(now()) @map("updated_at") @db.Timestamptz(6)
+  recipes           Recipe[]
+  recipeCollections RecipeCollection[]
+  summarizeJobs     SummarizeJob[]
 
   @@map("users")
 }
@@ -82,15 +83,42 @@ model Recipe {
   stepsText       String        @map("steps_text")
   summarySource   SummarySource @map("summary_source")
   aiConfidence    Float?        @map("ai_confidence")
-  isSaved         Boolean       @default(false) @map("is_saved")
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
   deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz(6)
+  collectionItems RecipeCollectionItem[]
   user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt(sort: Desc), id(sort: Desc)], map: "idx_recipes_user_created_id_desc")
   @@index([userId, title], map: "idx_recipes_user_title")
   @@map("recipes")
+}
+
+model RecipeCollection {
+  id          String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String                 @map("user_id") @db.Uuid
+  name        String                 @db.VarChar(80)
+  isDefault   Boolean                @default(false) @map("is_default")
+  createdAt   DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime               @default(now()) @map("updated_at") @db.Timestamptz(6)
+  items       RecipeCollectionItem[]
+  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)], map: "idx_recipe_collections_user_created_id_desc")
+  @@unique([userId, name], map: "uq_recipe_collections_user_name")
+  @@map("recipe_collections")
+}
+
+model RecipeCollectionItem {
+  collectionId String           @map("collection_id") @db.Uuid
+  recipeId     String           @map("recipe_id") @db.Uuid
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  collection   RecipeCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  recipe       Recipe           @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, recipeId])
+  @@index([recipeId], map: "idx_recipe_collection_items_recipe_id")
+  @@map("recipe_collection_items")
 }
 
 model SummarizeJob {

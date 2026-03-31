@@ -2,7 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import type { RecipeCollectionDto } from "@/src/apis/@types/recipe-collections";
 import type { RecipeDto, SummarizeJobStatus } from "@/src/apis/@types/recipes";
+import {
+  createRecipeCollection as createRecipeCollectionRequest,
+  deleteRecipeCollection as deleteRecipeCollectionRequest,
+  listRecipeCollectionRecipes as listRecipeCollectionRecipesRequest,
+  listRecipeCollections as listRecipeCollectionsRequest,
+  setRecipeCollections as setRecipeCollectionsRequest,
+  updateRecipeCollection as updateRecipeCollectionRequest
+} from "@/src/apis/recipe-collections";
 import {
   createRecipe as createRecipeRequest,
   createSummarizeJob as createSummarizeJobRequest,
@@ -46,7 +55,15 @@ type Recipe = {
   stepsText: string;
   summarySource: SummarySource;
   isSaved: boolean;
+  collectionIds: string[];
   updatedAt: string;
+};
+
+type RecipeCollectionSummary = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  recipeCount: number;
 };
 
 type RecipeDraft = {
@@ -324,12 +341,42 @@ const copy = {
         "아직 재료가 없습니다. 수정 화면에서 나중에 추가할 수 있어요.",
       noSteps:
         "아직 조리 과정이 없습니다. 링크를 먼저 저장하고 나중에 정리해도 됩니다.",
+      collections: "컬렉션",
       edit: "수정",
       delete: "삭제"
     },
     saved: {
       title: "저장됨",
       subtitle: "저장한 레시피 모음입니다.",
+      allRecipes: "전체",
+      createCollection: "컬렉션 만들기",
+      manageCollections: "편집",
+      collectionNameLabel: "컬렉션 이름",
+      collectionNamePlaceholder: "예: 주말 브런치",
+      createCollectionTitle: "새 컬렉션",
+      createCollectionDescription:
+        "저장한 레시피를 주제별로 모아볼 수 있는 컬렉션을 만들어보세요.",
+      renameCollectionTitle: "컬렉션 이름 변경",
+      renameCollectionDescription:
+        "컬렉션 이름을 새롭게 정리해보세요.",
+      manageCollectionsTitle: "컬렉션 관리",
+      manageCollectionsDescription:
+        "이 레시피를 포함할 컬렉션을 선택하세요. 모두 해제하면 저장됨에서 빠집니다.",
+      editCollectionsTitle: "컬렉션 편집",
+      editCollectionsDescription:
+        "사용자 컬렉션의 이름을 바꾸거나 삭제할 수 있어요.",
+      renameCollection: "이름 변경",
+      deleteCollection: "삭제",
+      defaultCollectionBadge: "기본",
+      customCollectionsEmpty: "아직 만든 컬렉션이 없습니다",
+      customCollectionsEmptyDescription:
+        "먼저 컬렉션을 만들고 레시피를 묶어보세요.",
+      deleteCollectionTitle: "컬렉션 삭제",
+      deleteCollectionDescription:
+        "“{title}” 컬렉션을 삭제할까요? 이 컬렉션에만 있던 레시피는 저장됨에서 빠집니다.",
+      noRecipesInCollection: "이 컬렉션에는 아직 레시피가 없어요",
+      noRecipesInCollectionDescription:
+        "레시피 상세에서 컬렉션에 추가하면 여기에서 볼 수 있어요.",
       emptyTitle: "저장된 레시피가 없습니다",
       emptyDescription: "레시피 상세 페이지에서 북마크 버튼을 눌러보세요."
     },
@@ -353,7 +400,11 @@ const copy = {
       deleted: "레시피가 삭제되었습니다",
       deleteFailed: "삭제 실패",
       savedOn: "저장됨",
-      unsaved: "저장 해제됨"
+      unsaved: "저장 해제됨",
+      collectionCreated: "컬렉션이 생성되었습니다",
+      collectionsUpdated: "컬렉션이 업데이트되었습니다",
+      collectionRenamed: "컬렉션 이름이 변경되었습니다",
+      collectionDeleted: "컬렉션이 삭제되었습니다"
     },
     deleteModal: {
       title: "레시피 삭제",
@@ -485,12 +536,42 @@ const copy = {
       noIngredients: "No ingredients yet. You can add them later from Edit.",
       noSteps:
         "No preparation steps yet. You can save the link first and organize it later.",
+      collections: "Collections",
       edit: "Edit",
       delete: "Delete"
     },
     saved: {
       title: "Saved",
       subtitle: "Your saved recipes collection.",
+      allRecipes: "All",
+      createCollection: "New Collection",
+      manageCollections: "Manage",
+      collectionNameLabel: "Collection name",
+      collectionNamePlaceholder: "e.g. Weekend Brunch",
+      createCollectionTitle: "Create Collection",
+      createCollectionDescription:
+        "Create a collection to organize saved recipes by theme or occasion.",
+      renameCollectionTitle: "Rename Collection",
+      renameCollectionDescription:
+        "Give this collection a clearer name.",
+      manageCollectionsTitle: "Manage Collections",
+      manageCollectionsDescription:
+        "Choose which collections should include this recipe. Clear all to unsave it.",
+      editCollectionsTitle: "Edit Collections",
+      editCollectionsDescription:
+        "Rename or delete your custom collections here.",
+      renameCollection: "Rename",
+      deleteCollection: "Delete",
+      defaultCollectionBadge: "Default",
+      customCollectionsEmpty: "No custom collections yet",
+      customCollectionsEmptyDescription:
+        "Create your first collection to organize saved recipes.",
+      deleteCollectionTitle: "Delete Collection",
+      deleteCollectionDescription:
+        "Delete “{title}”? Recipes that only live here will be removed from Saved.",
+      noRecipesInCollection: "No recipes in this collection yet",
+      noRecipesInCollectionDescription:
+        "Add this recipe from the detail view and it will show up here.",
       emptyTitle: "No saved recipes yet",
       emptyDescription: "Use the bookmark button on a recipe detail page."
     },
@@ -513,7 +594,11 @@ const copy = {
       deleted: "Recipe deleted",
       deleteFailed: "Delete failed",
       savedOn: "Saved",
-      unsaved: "Removed from saved"
+      unsaved: "Removed from saved",
+      collectionCreated: "Collection created",
+      collectionsUpdated: "Collections updated",
+      collectionRenamed: "Collection renamed",
+      collectionDeleted: "Collection deleted"
     },
     deleteModal: {
       title: "Delete Recipe",
@@ -548,7 +633,19 @@ function toRecipe(dto: RecipeDto): Recipe {
     stepsText: dto.stepsText,
     summarySource: dto.summarySource,
     isSaved: dto.isSaved,
+    collectionIds: dto.collectionIds,
     updatedAt: dto.updatedAt
+  };
+}
+
+function toRecipeCollectionSummary(
+  collection: RecipeCollectionDto
+): RecipeCollectionSummary {
+  return {
+    id: collection.id,
+    name: collection.name,
+    isDefault: collection.isDefault,
+    recipeCount: collection.recipeCount
   };
 }
 
@@ -642,6 +739,19 @@ const IcBookmark = ({ className }: { className?: string }) => (
     strokeLinejoin="round"
   >
     <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+  </svg>
+);
+const IcFolder = ({ className }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
   </svg>
 );
 const IcPlus = ({ className }: { className?: string }) => (
@@ -1174,7 +1284,9 @@ function RecipeCardSkeleton({
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export function RecipesHomeContainer() {
+  const ALL_SAVED_COLLECTION_ID = "all";
   const RECIPES_PAGE_SIZE = 20;
+  const SAVED_RECIPES_PAGE_SIZE = 50;
   const SEARCH_DEBOUNCE_MS = 250;
   const { isReady, session, signInWithPassword, signOut, signUpWithPassword } =
     useAuth();
@@ -1185,10 +1297,23 @@ export function RecipesHomeContainer() {
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [searchResults, setSearchResults] = useState<Recipe[] | null>(null);
+  const [collections, setCollections] = useState<RecipeCollectionSummary[]>([]);
+  const [allSavedRecipesCount, setAllSavedRecipesCount] = useState(0);
+  const [defaultCollectionId, setDefaultCollectionId] = useState("");
+  const [selectedSavedCollectionId, setSelectedSavedCollectionId] =
+    useState<string>(ALL_SAVED_COLLECTION_ID);
+  const [savedRecipes, setSavedRecipes] = useState<Recipe[] | null>(null);
   const [isRecipesLoading, setIsRecipesLoading] = useState(false);
   const [isSearchLoading, setIsSearchLoading] = useState(false);
+  const [isCollectionsLoading, setIsCollectionsLoading] = useState(false);
+  const [isSavedRecipesLoading, setIsSavedRecipesLoading] = useState(false);
   const [selectedRecipeId, setSelectedRecipeId] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showCreateCollectionModal, setShowCreateCollectionModal] =
+    useState(false);
+  const [showEditCollectionsModal, setShowEditCollectionsModal] =
+    useState(false);
+  const [showCollectionsModal, setShowCollectionsModal] = useState(false);
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
@@ -1197,10 +1322,24 @@ export function RecipesHomeContainer() {
   const [authBusy, setAuthBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [addUrl, setAddUrl] = useState("");
+  const [collectionModalMode, setCollectionModalMode] = useState<
+    "create" | "rename"
+  >("create");
+  const [editingCollection, setEditingCollection] =
+    useState<RecipeCollectionSummary | null>(null);
+  const [pendingDeleteCollection, setPendingDeleteCollection] =
+    useState<RecipeCollectionSummary | null>(null);
+  const [collectionName, setCollectionName] = useState("");
+  const [collectionSelection, setCollectionSelection] = useState<string[]>([]);
+  const [collectionError, setCollectionError] = useState("");
   const [urlError, setUrlError] = useState("");
   const [recipesError, setRecipesError] = useState("");
+  const [savedError, setSavedError] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSavingUrlOnly, setIsSavingUrlOnly] = useState(false);
+  const [isCreatingCollection, setIsCreatingCollection] = useState(false);
+  const [isDeletingCollection, setIsDeletingCollection] = useState(false);
+  const [isUpdatingCollections, setIsUpdatingCollections] = useState(false);
   const [summarizeJobStatus, setSummarizeJobStatus] =
     useState<SummarizeJobStatus | null>(null);
   const [draftErrors, setDraftErrors] = useState<
@@ -1222,21 +1361,36 @@ export function RecipesHomeContainer() {
   const isSearchActive = normalizedSearchQuery.length > 0;
 
   const ui = copy[language];
+  const savedCollectionRecipes = savedRecipes ?? [];
   const libraryRecipes = useMemo(
     () => (isSearchActive ? (searchResults ?? []) : recipes),
     [isSearchActive, recipes, searchResults]
   );
   const selectedRecipe = useMemo(
     () =>
+      savedRecipes?.find((recipe) => recipe.id === selectedRecipeId) ??
       searchResults?.find((recipe) => recipe.id === selectedRecipeId) ??
       recipes.find((recipe) => recipe.id === selectedRecipeId) ??
       null,
-    [recipes, searchResults, selectedRecipeId]
+    [recipes, savedRecipes, searchResults, selectedRecipeId]
   );
   const isInitialRecipesLoading =
     !isSearchActive && isRecipesLoading && recipes.length === 0;
   const isLibrarySearchLoading =
     isSearchActive && (isSearchLoading || searchResults === null);
+  const isSavedEmpty =
+    !isSavedRecipesLoading &&
+    !savedError &&
+    savedCollectionRecipes.length === 0 &&
+    collections.length > 0;
+
+  const matchesSavedCollectionFilter = (recipe: Recipe) => {
+    if (selectedSavedCollectionId === ALL_SAVED_COLLECTION_ID) {
+      return recipe.isSaved;
+    }
+
+    return recipe.collectionIds.includes(selectedSavedCollectionId);
+  };
 
   const upsertRecipeCollections = (
     nextRecipe: Recipe,
@@ -1266,6 +1420,17 @@ export function RecipesHomeContainer() {
 
       return upsertRecipeInList(currentSearchResults, nextRecipe);
     });
+    setSavedRecipes((currentSavedRecipes) => {
+      if (currentSavedRecipes === null) {
+        return currentSavedRecipes;
+      }
+
+      if (!matchesSavedCollectionFilter(nextRecipe)) {
+        return removeRecipeFromList(currentSavedRecipes, nextRecipe.id);
+      }
+
+      return upsertRecipeInList(currentSavedRecipes, nextRecipe);
+    });
   };
 
   const removeRecipeCollections = (recipeId: string) => {
@@ -1276,6 +1441,44 @@ export function RecipesHomeContainer() {
       currentSearchResults === null
         ? currentSearchResults
         : removeRecipeFromList(currentSearchResults, recipeId)
+    );
+    setSavedRecipes((currentSavedRecipes) =>
+      currentSavedRecipes === null
+        ? currentSavedRecipes
+        : removeRecipeFromList(currentSavedRecipes, recipeId)
+    );
+  };
+
+  const removeCollectionFromLoadedRecipes = (collectionId: string) => {
+    const patchRecipe = (recipe: Recipe) => {
+      if (!recipe.collectionIds.includes(collectionId)) {
+        return recipe;
+      }
+
+      const nextCollectionIds = recipe.collectionIds.filter(
+        (id) => id !== collectionId
+      );
+
+      return {
+        ...recipe,
+        collectionIds: nextCollectionIds,
+        isSaved: nextCollectionIds.length > 0
+      };
+    };
+
+    setRecipes((currentRecipes) => currentRecipes.map(patchRecipe));
+    setSearchResults((currentSearchResults) =>
+      currentSearchResults === null
+        ? currentSearchResults
+        : currentSearchResults.map(patchRecipe)
+    );
+    setSavedRecipes((currentSavedRecipes) =>
+      currentSavedRecipes === null
+        ? currentSavedRecipes
+        : currentSavedRecipes.map(patchRecipe).filter(matchesSavedCollectionFilter)
+    );
+    setCollectionSelection((currentSelection) =>
+      currentSelection.filter((id) => id !== collectionId)
     );
   };
 
@@ -1324,9 +1527,16 @@ export function RecipesHomeContainer() {
     if (!isReady || !session) {
       setRecipes([]);
       setSearchResults(null);
+      setCollections([]);
+      setAllSavedRecipesCount(0);
+      setDefaultCollectionId("");
+      setSelectedSavedCollectionId(ALL_SAVED_COLLECTION_ID);
+      setSavedRecipes(null);
       setSelectedRecipeId("");
       setIsRecipesLoading(false);
       setIsSearchLoading(false);
+      setIsCollectionsLoading(false);
+      setIsSavedRecipesLoading(false);
       return;
     }
     const controller = new AbortController();
@@ -1412,9 +1622,158 @@ export function RecipesHomeContainer() {
     ui.library.loadError
   ]);
 
+  useEffect(() => {
+    if (!isReady || !session) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        setIsCollectionsLoading(true);
+        setSavedError("");
+        const res = await listRecipeCollectionsRequest({
+          signal: controller.signal
+        });
+        if (controller.signal.aborted) {
+          return;
+        }
+        setCollections(res.items.map(toRecipeCollectionSummary));
+        setAllSavedRecipesCount(res.allRecipesCount);
+        setDefaultCollectionId(res.defaultCollectionId);
+        setSelectedSavedCollectionId((currentCollectionId) => {
+          if (currentCollectionId === ALL_SAVED_COLLECTION_ID) {
+            return currentCollectionId;
+          }
+
+          return res.items.some(
+            (collection) => collection.id === currentCollectionId
+          )
+            ? currentCollectionId
+            : ALL_SAVED_COLLECTION_ID;
+        });
+      } catch (err) {
+        if (isAbortError(err)) {
+          return;
+        }
+        setSavedError(
+          err instanceof Error ? err.message : ui.library.loadError
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsCollectionsLoading(false);
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, [ALL_SAVED_COLLECTION_ID, isReady, session, ui.library.loadError]);
+
+  useEffect(() => {
+    if (!isReady || !session) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        setIsSavedRecipesLoading(true);
+        setSavedError("");
+        setSavedRecipes(null);
+        const res = await listRecipeCollectionRecipesRequest(
+          {
+            collectionId:
+              selectedSavedCollectionId === ALL_SAVED_COLLECTION_ID
+                ? undefined
+                : selectedSavedCollectionId,
+            limit: SAVED_RECIPES_PAGE_SIZE
+          },
+          { signal: controller.signal }
+        );
+        if (controller.signal.aborted) {
+          return;
+        }
+        setSavedRecipes(res.items.map(toRecipe));
+      } catch (err) {
+        if (isAbortError(err)) {
+          return;
+        }
+        setSavedRecipes([]);
+        setSavedError(
+          err instanceof Error ? err.message : ui.library.loadError
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSavedRecipesLoading(false);
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, [
+    ALL_SAVED_COLLECTION_ID,
+    SAVED_RECIPES_PAGE_SIZE,
+    isReady,
+    selectedSavedCollectionId,
+    session,
+    ui.library.loadError
+  ]);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     window.setTimeout(() => setToastMessage(""), 2400);
+  };
+
+  const refreshCollections = async () => {
+    const res = await listRecipeCollectionsRequest();
+
+    setCollections(res.items.map(toRecipeCollectionSummary));
+    setAllSavedRecipesCount(res.allRecipesCount);
+    setDefaultCollectionId(res.defaultCollectionId);
+    setSelectedSavedCollectionId((currentCollectionId) => {
+      if (currentCollectionId === ALL_SAVED_COLLECTION_ID) {
+        return currentCollectionId;
+      }
+
+      return res.items.some(
+        (collection) => collection.id === currentCollectionId
+      )
+        ? currentCollectionId
+        : ALL_SAVED_COLLECTION_ID;
+    });
+  };
+
+  const refreshSavedRecipes = async (
+    collectionId = selectedSavedCollectionId
+  ) => {
+    const res = await listRecipeCollectionRecipesRequest({
+      collectionId:
+        collectionId === ALL_SAVED_COLLECTION_ID ? undefined : collectionId,
+      limit: SAVED_RECIPES_PAGE_SIZE
+    });
+
+    setSavedRecipes(res.items.map(toRecipe));
+  };
+
+  const openCreateCollectionModal = () => {
+    setCollectionModalMode("create");
+    setEditingCollection(null);
+    setCollectionName("");
+    setCollectionError("");
+    setShowEditCollectionsModal(false);
+    setPendingDeleteCollection(null);
+    setShowCreateCollectionModal(true);
+  };
+
+  const openRenameCollectionModal = (collection: RecipeCollectionSummary) => {
+    setCollectionModalMode("rename");
+    setEditingCollection(collection);
+    setCollectionName(collection.name);
+    setCollectionError("");
+    setShowEditCollectionsModal(false);
+    setShowCreateCollectionModal(true);
   };
 
   const openLibraryForRecipe = (recipeId: string) => {
@@ -1422,6 +1781,16 @@ export function RecipesHomeContainer() {
     setSearchResults(null);
     setSelectedRecipeId(recipeId);
     setScreen("list");
+  };
+
+  const openCollectionsModal = () => {
+    if (!selectedRecipe) {
+      return;
+    }
+
+    setCollectionSelection(selectedRecipe.collectionIds);
+    setCollectionError("");
+    setShowCollectionsModal(true);
   };
 
   const resetDraft = () => {
@@ -1449,6 +1818,114 @@ export function RecipesHomeContainer() {
       summarySource: "manual"
     });
     setDraftErrors({});
+  };
+
+  const handleSubmitCollection = async () => {
+    const trimmedName = collectionName.trim();
+
+    if (!trimmedName) {
+      setCollectionError(
+        language === "ko"
+          ? "컬렉션 이름을 입력해주세요."
+          : "Please enter a collection name."
+      );
+      return;
+    }
+
+    setCollectionError("");
+    setIsCreatingCollection(true);
+
+    try {
+      if (collectionModalMode === "rename" && editingCollection) {
+        await updateRecipeCollectionRequest(editingCollection.id, {
+          name: trimmedName
+        });
+        await refreshCollections();
+        setCollectionName("");
+        setEditingCollection(null);
+        setShowCreateCollectionModal(false);
+        showToast(ui.actions.collectionRenamed);
+        return;
+      }
+
+      const created = await createRecipeCollectionRequest({
+        name: trimmedName
+      });
+
+      await refreshCollections();
+      setCollectionName("");
+      setShowCreateCollectionModal(false);
+      setSelectedSavedCollectionId(created.id);
+      showToast(ui.actions.collectionCreated);
+    } catch (err) {
+      setCollectionError(
+        err instanceof Error ? err.message : ui.actions.saveFailed
+      );
+    } finally {
+      setIsCreatingCollection(false);
+    }
+  };
+
+  const handleDeleteCollection = async () => {
+    if (!pendingDeleteCollection) {
+      return;
+    }
+
+    setCollectionError("");
+    setIsDeletingCollection(true);
+
+    try {
+      await deleteRecipeCollectionRequest(pendingDeleteCollection.id);
+
+      const nextCollectionId =
+        selectedSavedCollectionId === pendingDeleteCollection.id
+          ? ALL_SAVED_COLLECTION_ID
+          : selectedSavedCollectionId;
+
+      removeCollectionFromLoadedRecipes(pendingDeleteCollection.id);
+      setPendingDeleteCollection(null);
+      setSelectedSavedCollectionId(nextCollectionId);
+      await refreshCollections();
+      await refreshSavedRecipes(nextCollectionId);
+      showToast(ui.actions.collectionDeleted);
+    } catch (err) {
+      setCollectionError(
+        err instanceof Error ? err.message : ui.actions.deleteFailed
+      );
+    } finally {
+      setIsDeletingCollection(false);
+    }
+  };
+
+  const handleSaveRecipeCollections = async () => {
+    if (!selectedRecipe) {
+      return;
+    }
+
+    setCollectionError("");
+    setIsUpdatingCollections(true);
+
+    try {
+      const updated = await setRecipeCollectionsRequest(selectedRecipe.id, {
+        collectionIds: collectionSelection
+      });
+      const nextRecipe = toRecipe(updated);
+
+      upsertRecipeCollections(nextRecipe);
+      await refreshCollections();
+      await refreshSavedRecipes();
+      setSelectedRecipeId(nextRecipe.id);
+      setShowCollectionsModal(false);
+      showToast(
+        nextRecipe.isSaved ? ui.actions.collectionsUpdated : ui.actions.unsaved
+      );
+    } catch (err) {
+      setCollectionError(
+        err instanceof Error ? err.message : ui.actions.saveFailed
+      );
+    } finally {
+      setIsUpdatingCollections(false);
+    }
   };
 
   const handleAuthSubmit = async () => {
@@ -1667,12 +2144,26 @@ export function RecipesHomeContainer() {
   const handleToggleSave = async () => {
     if (!selectedRecipe) return;
     const next = !selectedRecipe.isSaved;
-    const optimisticRecipe = { ...selectedRecipe, isSaved: next };
+    const optimisticRecipe = {
+      ...selectedRecipe,
+      isSaved: next,
+      collectionIds: next
+        ? selectedRecipe.collectionIds.length > 0
+          ? selectedRecipe.collectionIds
+          : defaultCollectionId
+            ? [defaultCollectionId]
+            : []
+        : []
+    };
     // Optimistic update
     upsertRecipeCollections(optimisticRecipe);
     try {
       const updated = await toggleSaveRecipeRequest(selectedRecipe.id, next);
-      upsertRecipeCollections(toRecipe(updated));
+      const nextRecipe = toRecipe(updated);
+
+      upsertRecipeCollections(nextRecipe);
+      await refreshCollections();
+      await refreshSavedRecipes();
       showToast(next ? ui.actions.savedOn : ui.actions.unsaved);
     } catch {
       // Rollback
@@ -1700,6 +2191,8 @@ export function RecipesHomeContainer() {
       await deleteRecipeRequest(selectedRecipe.id);
       const remaining = removeRecipeFromList(recipes, selectedRecipe.id);
       removeRecipeCollections(selectedRecipe.id);
+      await refreshCollections();
+      await refreshSavedRecipes();
       setSelectedRecipeId(remaining[0]?.id ?? "");
       setShowDeleteModal(false);
       setScreen("list");
@@ -2561,12 +3054,21 @@ export function RecipesHomeContainer() {
                   )}
                 </div>
 
-                {/* Edit / Delete */}
-                <div className="mt-6 flex gap-3">
+                {/* Collections / Edit / Delete */}
+                <div className="mt-6 grid grid-cols-3 gap-3">
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-12 flex-1 rounded-xl font-bold"
+                    className="h-12 rounded-xl font-bold"
+                    onClick={openCollectionsModal}
+                  >
+                    <IcFolder className="mr-2 h-4 w-4" />
+                    {ui.detail.collections}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-12 rounded-xl font-bold"
                     onClick={openEdit}
                   >
                     {ui.detail.edit}
@@ -2574,7 +3076,7 @@ export function RecipesHomeContainer() {
                   <Button
                     type="button"
                     variant="destructive"
-                    className="h-12 flex-1 rounded-xl font-bold"
+                    className="h-12 rounded-xl font-bold"
                     onClick={() => setShowDeleteModal(true)}
                   >
                     {ui.detail.delete}
@@ -2591,73 +3093,153 @@ export function RecipesHomeContainer() {
                 <Logo />
               </div>
               <div className="px-5">
-                <h1 className="text-[32px] font-bold leading-tight">
-                  {ui.saved.title}
-                </h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {ui.saved.subtitle}
-                </p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h1 className="text-[32px] font-bold leading-tight">
+                      {ui.saved.title}
+                    </h1>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {ui.saved.subtitle}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 rounded-xl px-3 font-bold"
+                      onClick={() => {
+                        setCollectionError("");
+                        setShowEditCollectionsModal(true);
+                      }}
+                    >
+                      {ui.saved.manageCollections}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 rounded-xl px-3 font-bold"
+                      onClick={openCreateCollectionModal}
+                    >
+                      <IcPlus className="mr-2 h-4 w-4" />
+                      {ui.saved.createCollection}
+                    </Button>
+                  </div>
+                </div>
 
-                {isInitialRecipesLoading ? (
+                {isCollectionsLoading ? (
+                  <div className="mt-4 flex gap-2">
+                    <Skeleton className="h-10 w-20 rounded-full" />
+                    <Skeleton className="h-10 w-28 rounded-full" />
+                    <Skeleton className="h-10 w-24 rounded-full" />
+                  </div>
+                ) : (
+                  <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+                    <button
+                      type="button"
+                      className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold transition ${
+                        selectedSavedCollectionId === ALL_SAVED_COLLECTION_ID
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border/70 bg-card text-foreground"
+                      }`}
+                      onClick={() =>
+                        setSelectedSavedCollectionId(ALL_SAVED_COLLECTION_ID)
+                      }
+                    >
+                      <span>{ui.saved.allRecipes}</span>
+                      <span className="text-xs opacity-80">
+                        {allSavedRecipesCount}
+                      </span>
+                    </button>
+                    {collections.map((collection) => (
+                      <button
+                        key={collection.id}
+                        type="button"
+                        className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold transition ${
+                          selectedSavedCollectionId === collection.id
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border/70 bg-card text-foreground"
+                        }`}
+                        onClick={() =>
+                          setSelectedSavedCollectionId(collection.id)
+                        }
+                      >
+                        <span>{collection.name}</span>
+                        <span className="text-xs opacity-80">
+                          {collection.recipeCount}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {savedError && (
+                  <p className="mt-3 text-sm text-destructive">{savedError}</p>
+                )}
+
+                {isSavedRecipesLoading ? (
                   <div className="mt-4 space-y-4">
                     <RecipeCardSkeleton showBookmark />
                     <RecipeCardSkeleton showBookmark />
                   </div>
-                ) : recipes.filter((r) => r.isSaved).length === 0 ? (
+                ) : isSavedEmpty ? (
                   <div className="mt-8 flex flex-col items-center gap-4 py-12 text-center">
                     <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-border/70 bg-card">
-                      <IcBookmark className="h-7 w-7 text-muted-foreground" />
+                      <IcFolder className="h-7 w-7 text-muted-foreground" />
                     </div>
                     <div>
-                      <p className="font-semibold">{ui.saved.emptyTitle}</p>
+                      <p className="font-semibold">
+                        {selectedSavedCollectionId === ALL_SAVED_COLLECTION_ID
+                          ? ui.saved.emptyTitle
+                          : ui.saved.noRecipesInCollection}
+                      </p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        {ui.saved.emptyDescription}
+                        {selectedSavedCollectionId === ALL_SAVED_COLLECTION_ID
+                          ? ui.saved.emptyDescription
+                          : ui.saved.noRecipesInCollectionDescription}
                       </p>
                     </div>
                   </div>
                 ) : (
                   <div className="mt-4 space-y-4">
-                    {recipes
-                      .filter((r) => r.isSaved)
-                      .map((recipe) => (
-                        <button
-                          key={recipe.id}
-                          type="button"
-                          className="w-full overflow-hidden rounded-2xl border border-border/70 bg-card text-left transition active:scale-[0.98]"
-                          onClick={() => {
-                            setSelectedRecipeId(recipe.id);
-                            setScreen("detail");
-                          }}
-                        >
-                          <div className="relative h-[140px] w-full">
-                            <RecipeThumbnail
-                              key={recipe.sourceUrl}
-                              recipe={recipe}
-                              alt={recipe.title}
-                              className="h-full w-full object-cover"
+                    {savedCollectionRecipes.map((recipe) => (
+                      <button
+                        key={recipe.id}
+                        type="button"
+                        className="w-full overflow-hidden rounded-2xl border border-border/70 bg-card text-left transition active:scale-[0.98]"
+                        onClick={() => {
+                          setSelectedRecipeId(recipe.id);
+                          setScreen("detail");
+                        }}
+                      >
+                        <div className="relative h-[140px] w-full">
+                          <RecipeThumbnail
+                            key={recipe.sourceUrl}
+                            recipe={recipe}
+                            alt={recipe.title}
+                            className="h-full w-full object-cover"
+                          />
+                          <div className="absolute right-3 top-3">
+                            <SourceBadge
+                              language={language}
+                              sourceType={recipe.sourceType}
+                              summarySource={recipe.summarySource}
+                              overlay
                             />
-                            <div className="absolute right-3 top-3">
-                              <SourceBadge
-                                language={language}
-                                sourceType={recipe.sourceType}
-                                summarySource={recipe.summarySource}
-                                overlay
-                              />
-                            </div>
-                            <div className="absolute left-3 top-3">
-                              <IcBookmark className="h-4 w-4 fill-primary text-primary" />
-                            </div>
                           </div>
-                          <div className="p-4">
-                            <h3 className="font-bold leading-snug">
-                              {recipe.title}
-                            </h3>
-                            <p className="mt-1 text-[11px] text-muted-foreground">
-                              {toUpdatedAtLabel(recipe.updatedAt, language)}
-                            </p>
+                          <div className="absolute left-3 top-3">
+                            <IcBookmark className="h-4 w-4 fill-primary text-primary" />
                           </div>
-                        </button>
-                      ))}
+                        </div>
+                        <div className="p-4">
+                          <h3 className="font-bold leading-snug">
+                            {recipe.title}
+                          </h3>
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            {toUpdatedAtLabel(recipe.updatedAt, language)}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
@@ -2677,7 +3259,10 @@ export function RecipesHomeContainer() {
                   </div>
                   <p className="mt-4 font-bold">{session?.user.email}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {replaceCount(ui.profile.recipesSaved, recipes.length)}
+                    {replaceCount(
+                      ui.profile.recipesSaved,
+                      allSavedRecipesCount
+                    )}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-border/70 bg-card p-4">
@@ -2786,6 +3371,281 @@ export function RecipesHomeContainer() {
                   onClick={() => void handleDelete()}
                 >
                   {ui.deleteModal.delete}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showCreateCollectionModal && (
+          <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/60">
+            <div className="w-full rounded-t-3xl border-x border-t border-border/70 bg-card p-6 pb-8">
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-muted" />
+              <h2 className="text-lg font-bold">
+                {collectionModalMode === "rename"
+                  ? ui.saved.renameCollectionTitle
+                  : ui.saved.createCollectionTitle}
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {collectionModalMode === "rename"
+                  ? ui.saved.renameCollectionDescription
+                  : ui.saved.createCollectionDescription}
+              </p>
+              <div className="mt-5 space-y-2">
+                <Label>{ui.saved.collectionNameLabel}</Label>
+                <Input
+                  value={collectionName}
+                  onChange={(e) => setCollectionName(e.target.value)}
+                  placeholder={ui.saved.collectionNamePlaceholder}
+                  className="h-12 rounded-xl border border-border/70 bg-card focus-visible:ring-1 focus-visible:ring-primary"
+                />
+                {collectionError && (
+                  <p className="text-sm text-destructive">{collectionError}</p>
+                )}
+              </div>
+              <div className="mt-6 flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 flex-1 rounded-xl font-bold"
+                  onClick={() => {
+                    setShowCreateCollectionModal(false);
+                    setEditingCollection(null);
+                    setCollectionError("");
+                  }}
+                >
+                  {ui.deleteModal.cancel}
+                </Button>
+                <Button
+                  type="button"
+                  className="h-12 flex-1 rounded-xl font-bold"
+                  onClick={() => void handleSubmitCollection()}
+                  disabled={isCreatingCollection}
+                >
+                  {collectionModalMode === "rename"
+                    ? ui.saved.renameCollection
+                    : ui.saved.createCollection}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showEditCollectionsModal && (
+          <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/60">
+            <div className="w-full rounded-t-3xl border-x border-t border-border/70 bg-card p-6 pb-8">
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-muted" />
+              <h2 className="text-lg font-bold">
+                {ui.saved.editCollectionsTitle}
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {ui.saved.editCollectionsDescription}
+              </p>
+              {collections.filter((collection) => !collection.isDefault)
+                .length === 0 ? (
+                <div className="mt-5 rounded-2xl border border-border/70 bg-card px-4 py-5 text-center">
+                  <p className="font-semibold">{ui.saved.customCollectionsEmpty}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {ui.saved.customCollectionsEmptyDescription}
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-5 space-y-3">
+                  {collections.map((collection) => (
+                    <div
+                      key={collection.id}
+                      className="rounded-2xl border border-border/70 bg-card px-4 py-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold">{collection.name}</p>
+                            {collection.isDefault && (
+                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-primary">
+                                {ui.saved.defaultCollectionBadge}
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {collection.recipeCount}
+                          </p>
+                        </div>
+                        {!collection.isDefault && (
+                          <div className="flex shrink-0 gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-9 rounded-lg px-3 text-xs font-bold"
+                              onClick={() => openRenameCollectionModal(collection)}
+                            >
+                              {ui.saved.renameCollection}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              className="h-9 rounded-lg px-3 text-xs font-bold"
+                              onClick={() => {
+                                setCollectionError("");
+                                setPendingDeleteCollection(collection);
+                                setShowEditCollectionsModal(false);
+                              }}
+                            >
+                              {ui.saved.deleteCollection}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {collectionError && (
+                <p className="mt-4 text-sm text-destructive">
+                  {collectionError}
+                </p>
+              )}
+              <div className="mt-6 flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 flex-1 rounded-xl font-bold"
+                  onClick={() => {
+                    setShowEditCollectionsModal(false);
+                    setCollectionError("");
+                  }}
+                >
+                  {ui.deleteModal.cancel}
+                </Button>
+                <Button
+                  type="button"
+                  className="h-12 flex-1 rounded-xl font-bold"
+                  onClick={openCreateCollectionModal}
+                >
+                  <IcPlus className="mr-2 h-4 w-4" />
+                  {ui.saved.createCollection}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showCollectionsModal && selectedRecipe && (
+          <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/60">
+            <div className="w-full rounded-t-3xl border-x border-t border-border/70 bg-card p-6 pb-8">
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-muted" />
+              <h2 className="text-lg font-bold">
+                {ui.saved.manageCollectionsTitle}
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {ui.saved.manageCollectionsDescription}
+              </p>
+              <div className="mt-5 space-y-3">
+                {collections.map((collection) => {
+                  const selected = collectionSelection.includes(collection.id);
+
+                  return (
+                    <button
+                      key={collection.id}
+                      type="button"
+                      className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition ${
+                        selected
+                          ? "border-primary bg-primary/10"
+                          : "border-border/70 bg-card"
+                      }`}
+                      onClick={() =>
+                        setCollectionSelection((currentSelection) =>
+                          currentSelection.includes(collection.id)
+                            ? currentSelection.filter(
+                                (id) => id !== collection.id
+                              )
+                            : [...currentSelection, collection.id]
+                        )
+                      }
+                    >
+                      <div>
+                        <p className="font-semibold">{collection.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {collection.recipeCount}
+                        </p>
+                      </div>
+                      <div
+                        className={`flex h-5 w-5 items-center justify-center rounded-full border ${
+                          selected
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border/70 text-transparent"
+                        }`}
+                      >
+                        ✓
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {collectionError && (
+                <p className="mt-4 text-sm text-destructive">
+                  {collectionError}
+                </p>
+              )}
+              <div className="mt-6 flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 flex-1 rounded-xl font-bold"
+                  onClick={() => setShowCollectionsModal(false)}
+                >
+                  {ui.deleteModal.cancel}
+                </Button>
+                <Button
+                  type="button"
+                  className="h-12 flex-1 rounded-xl font-bold"
+                  onClick={() => void handleSaveRecipeCollections()}
+                  disabled={isUpdatingCollections}
+                >
+                  {ui.detail.collections}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {pendingDeleteCollection && (
+          <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/60">
+            <div className="w-full rounded-t-3xl border-x border-t border-border/70 bg-card p-6 pb-8">
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-muted" />
+              <h2 className="text-lg font-bold">
+                {ui.saved.deleteCollectionTitle}
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {replaceTitle(
+                  ui.saved.deleteCollectionDescription,
+                  pendingDeleteCollection.name
+                )}
+              </p>
+              {collectionError && (
+                <p className="mt-4 text-sm text-destructive">
+                  {collectionError}
+                </p>
+              )}
+              <div className="mt-6 flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 flex-1 rounded-xl font-bold"
+                  onClick={() => {
+                    setPendingDeleteCollection(null);
+                    setCollectionError("");
+                  }}
+                >
+                  {ui.deleteModal.cancel}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="h-12 flex-1 rounded-xl font-bold"
+                  onClick={() => void handleDeleteCollection()}
+                  disabled={isDeletingCollection}
+                >
+                  {ui.saved.deleteCollection}
                 </Button>
               </div>
             </div>

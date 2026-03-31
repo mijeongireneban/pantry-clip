@@ -1,4 +1,4 @@
-import { Prisma, SourceType as PrismaSourceType, SummarySource as PrismaSummarySource } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import type {
   CreateRecipeInput,
@@ -9,22 +9,26 @@ import type {
   UpdateRecipeInput
 } from "@/src/apps/recipes/recipes.types";
 import { prisma } from "@/src/lib/server/prisma";
-import { decodeRecipesCursor, encodeRecipesCursor } from "@/src/lib/server/recipes/recipes.utils";
+import {
+  decodeRecipesCursor,
+  encodeRecipesCursor
+} from "@/src/lib/server/recipes/recipes.utils";
 
-function toRecipe(record: {
-  id: string;
-  userId: string;
-  sourceUrl: string;
-  sourceType: PrismaSourceType;
-  title: string;
-  ingredientsText: string;
-  stepsText: string;
-  summarySource: PrismaSummarySource;
-  aiConfidence: number | null;
-  isSaved: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}): Recipe {
+const recipeWithCollectionsSelect = {
+  collectionItems: {
+    select: {
+      collectionId: true
+    }
+  }
+} satisfies Prisma.RecipeInclude;
+
+type RecipeRecord = Prisma.RecipeGetPayload<{
+  include: typeof recipeWithCollectionsSelect;
+}>;
+
+function toRecipe(record: RecipeRecord): Recipe {
+  const collectionIds = record.collectionItems.map((item) => item.collectionId);
+
   return {
     id: record.id,
     userId: record.userId,
@@ -35,13 +39,17 @@ function toRecipe(record: {
     stepsText: record.stepsText,
     summarySource: record.summarySource,
     aiConfidence: record.aiConfidence,
-    isSaved: record.isSaved,
+    isSaved: collectionIds.length > 0,
+    collectionIds,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString()
   };
 }
 
-export async function createRecipe(userId: string, input: CreateRecipeInput): Promise<Recipe> {
+export async function createRecipe(
+  userId: string,
+  input: CreateRecipeInput
+): Promise<Recipe> {
   const recipe = await prisma.recipe.create({
     data: {
       userId,
@@ -52,7 +60,8 @@ export async function createRecipe(userId: string, input: CreateRecipeInput): Pr
       stepsText: input.stepsText.trim(),
       summarySource: input.summarySource,
       aiConfidence: input.aiConfidence ?? null
-    }
+    },
+    include: recipeWithCollectionsSelect
   });
 
   return toRecipe(recipe);
@@ -76,13 +85,17 @@ export async function createRecipeUrlOnly(
       stepsText: "",
       summarySource: "manual",
       aiConfidence: null
-    }
+    },
+    include: recipeWithCollectionsSelect
   });
 
   return toRecipe(recipe);
 }
 
-export async function listRecipes(userId: string, query: ListRecipesQuery): Promise<PaginatedRecipes> {
+export async function listRecipes(
+  userId: string,
+  query: ListRecipesQuery
+): Promise<PaginatedRecipes> {
   const needle = query.q?.toLowerCase();
   const cursor = query.cursor ? decodeRecipesCursor(query.cursor) : null;
   const where: Prisma.RecipeWhereInput = {
@@ -117,6 +130,7 @@ export async function listRecipes(userId: string, query: ListRecipesQuery): Prom
 
   const window = await prisma.recipe.findMany({
     where,
+    include: recipeWithCollectionsSelect,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: query.limit + 1
   });
@@ -126,17 +140,24 @@ export async function listRecipes(userId: string, query: ListRecipesQuery): Prom
 
   return {
     items,
-    nextCursor: hasMore && tail ? encodeRecipesCursor({ createdAt: tail.createdAt, id: tail.id }) : undefined
+    nextCursor:
+      hasMore && tail
+        ? encodeRecipesCursor({ createdAt: tail.createdAt, id: tail.id })
+        : undefined
   };
 }
 
-export async function getRecipeById(userId: string, id: string): Promise<Recipe | null> {
+export async function getRecipeById(
+  userId: string,
+  id: string
+): Promise<Recipe | null> {
   const recipe = await prisma.recipe.findFirst({
     where: {
       id,
       userId,
       deletedAt: null
-    }
+    },
+    include: recipeWithCollectionsSelect
   });
 
   return recipe ? toRecipe(recipe) : null;
@@ -162,22 +183,37 @@ export async function updateRecipe(
   const updated = await prisma.recipe.update({
     where: { id },
     data: {
-      ...(patch.sourceUrl !== undefined ? { sourceUrl: patch.sourceUrl.trim() } : {}),
-      ...(patch.sourceType !== undefined ? { sourceType: patch.sourceType } : {}),
+      ...(patch.sourceUrl !== undefined
+        ? { sourceUrl: patch.sourceUrl.trim() }
+        : {}),
+      ...(patch.sourceType !== undefined
+        ? { sourceType: patch.sourceType }
+        : {}),
       ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
-      ...(patch.ingredientsText !== undefined ? { ingredientsText: patch.ingredientsText.trim() } : {}),
-      ...(patch.stepsText !== undefined ? { stepsText: patch.stepsText.trim() } : {}),
-      ...(patch.summarySource !== undefined ? { summarySource: patch.summarySource } : {}),
-      ...(patch.aiConfidence !== undefined ? { aiConfidence: patch.aiConfidence } : {}),
-      ...(patch.isSaved !== undefined ? { isSaved: patch.isSaved } : {}),
+      ...(patch.ingredientsText !== undefined
+        ? { ingredientsText: patch.ingredientsText.trim() }
+        : {}),
+      ...(patch.stepsText !== undefined
+        ? { stepsText: patch.stepsText.trim() }
+        : {}),
+      ...(patch.summarySource !== undefined
+        ? { summarySource: patch.summarySource }
+        : {}),
+      ...(patch.aiConfidence !== undefined
+        ? { aiConfidence: patch.aiConfidence }
+        : {}),
       updatedAt: new Date()
-    }
+    },
+    include: recipeWithCollectionsSelect
   });
 
   return toRecipe(updated);
 }
 
-export async function deleteRecipe(userId: string, id: string): Promise<boolean> {
+export async function deleteRecipe(
+  userId: string,
+  id: string
+): Promise<boolean> {
   const deleted = await prisma.recipe.updateMany({
     where: {
       id,

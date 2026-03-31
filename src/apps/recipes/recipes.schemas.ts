@@ -86,7 +86,6 @@ export const listRecipesQuerySchema = z.object({
 });
 
 export const updateRecipeSchema = createRecipeSchema
-  .extend({ isSaved: z.boolean().optional() })
   .partial()
   .refine(
     (value) => Object.keys(value).length > 0,
