@@ -22,6 +22,7 @@ import { Skeleton } from "@/src/components/ui/skeleton";
 
 type SourceType = "youtube_shorts" | "instagram_reels" | "other";
 type SummarySource = "manual" | "ai";
+type Language = "ko" | "en";
 // "add" now handles inline draft review. "review" is manual/write-text entry only.
 type Screen = "auth" | "list" | "add" | "review" | "detail" | "edit" | "scrap" | "profile";
 type Tab = "library" | "add" | "scrap" | "profile";
@@ -35,7 +36,7 @@ type Recipe = {
   stepsText: string;
   summarySource: SummarySource;
   isSaved: boolean;
-  updatedAtLabel: string;
+  updatedAt: string;
 };
 
 type RecipeDraft = {
@@ -56,6 +57,46 @@ function inferSourceType(url: string): SourceType {
   return "other";
 }
 
+function extractYouTubeVideoId(url: string) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+
+    if (host === "youtu.be") {
+      return parsed.pathname.split("/").filter(Boolean)[0] ?? null;
+    }
+
+    if (host.includes("youtube.com")) {
+      const shortsMatch = parsed.pathname.match(/^\/shorts\/([^/?#]+)/);
+      if (shortsMatch?.[1]) return shortsMatch[1];
+
+      const watchId = parsed.searchParams.get("v");
+      if (watchId) return watchId;
+
+      const embedMatch = parsed.pathname.match(/^\/embed\/([^/?#]+)/);
+      if (embedMatch?.[1]) return embedMatch[1];
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function getRecipeThumbnailCandidates(recipe: Pick<Recipe, "sourceType" | "sourceUrl">) {
+  if (recipe.sourceType !== "youtube_shorts") return [];
+
+  const videoId = extractYouTubeVideoId(recipe.sourceUrl);
+  if (!videoId) return [];
+
+  return [
+    `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+    `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+    `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+    `https://i.ytimg.com/vi/${videoId}/default.jpg`
+  ];
+}
+
 function toIngredientItems(text: string) {
   return text.split("\n").map((l) => l.replace(/^-+\s*/, "").trim()).filter(Boolean);
 }
@@ -64,28 +105,331 @@ function toStepItems(text: string) {
   return text.split("\n").map((l) => l.replace(/^\d+\.\s*/, "").trim()).filter(Boolean);
 }
 
-function validateDraft(d: RecipeDraft) {
+function validateDraft(d: RecipeDraft, language: Language) {
   const e: Partial<Record<keyof RecipeDraft, string>> = {};
-  if (!d.sourceUrl.trim()) e.sourceUrl = "URL을 입력해주세요.";
-  if (!d.title.trim()) e.title = "제목을 입력해주세요.";
-  if (!d.ingredientsText.trim()) e.ingredientsText = "재료를 입력해주세요.";
-  if (!d.stepsText.trim()) e.stepsText = "조리 과정을 입력해주세요.";
+  if (!d.sourceUrl.trim()) e.sourceUrl = language === "ko" ? "URL을 입력해주세요." : "Please enter a URL.";
+  if (!d.title.trim()) e.title = language === "ko" ? "제목을 입력해주세요." : "Please enter a title.";
+  if (!d.ingredientsText.trim()) e.ingredientsText = language === "ko" ? "재료를 입력해주세요." : "Please enter ingredients.";
+  if (!d.stepsText.trim()) e.stepsText = language === "ko" ? "조리 과정을 입력해주세요." : "Please enter preparation steps.";
   return e;
 }
 
-function toUpdatedAtLabel(updatedAt: string) {
-  return new Date(updatedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" });
+function toUpdatedAtLabel(updatedAt: string, language: Language) {
+  return new Date(updatedAt).toLocaleDateString(language === "ko" ? "ko-KR" : "en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric"
+  });
 }
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function toSummarizeStatusLabel(status: SummarizeJobStatus | null) {
+function toSummarizeStatusLabel(status: SummarizeJobStatus | null, language: Language) {
+  if (language === "ko") {
+    if (status === "queued") return "대기 중...";
+    if (status === "extracting") return "추출 중...";
+    if (status === "summarizing") return "생성 중...";
+    return "생성 중...";
+  }
+
   if (status === "queued") return "Queueing...";
   if (status === "extracting") return "Extracting...";
   if (status === "summarizing") return "Generating...";
   return "Generating...";
+}
+
+const LANGUAGE_STORAGE_KEY = "pantryclip-language";
+
+const copy = {
+  ko: {
+    bottomNav: { library: "보관함", add: "추가", scrap: "저장됨", profile: "프로필" },
+    sourceBadge: { youtube: "유튜브", instagram: "인스타그램", link: "링크", ai: "AI" },
+    auth: {
+      welcomeBack: "다시 오신 것을 환영합니다",
+      createAccount: "계정을 만들어보세요",
+      signInDescription: "계정에 로그인하고 PantryClip을 계속 사용하세요.",
+      signUpDescription: "짧은 요리 영상을 나만의 레시피로 저장해보세요.",
+      email: "이메일",
+      password: "비밀번호",
+      forgotPassword: "비밀번호 찾기",
+      loading: "로딩 중...",
+      login: "로그인",
+      createAccountCta: "계정 만들기",
+      orContinueWith: "또는 다른 방법으로 계속",
+      socialComingSoon: "소셜 로그인은 곧 지원됩니다",
+      dontHaveAccount: "계정이 없으신가요?",
+      alreadyHaveAccount: "이미 계정이 있으신가요?",
+      signUpSwitch: "회원가입",
+      signInSwitch: "로그인",
+      signUpNotice: "계정이 생성되었습니다. 이메일을 확인하여 인증을 완료해주세요.",
+      authFailed: "인증에 실패했습니다."
+    },
+    library: {
+      title: "내 레시피",
+      subtitle: "나만의 요리 컬렉션을 관리하고 새로운 맛을 탐험하세요.",
+      addRecipe: "레시피 추가",
+      searchPlaceholder: "레시피 검색...",
+      loadError: "레시피를 불러오지 못했습니다.",
+      recentRecipes: "최근 레시피",
+      noRecipes: "아직 레시피가 없어요",
+      noRecipesDescription: "링크를 붙여넣어 첫 번째 레시피를 추가해보세요.",
+      noMatches: "검색 결과가 없어요",
+      noMatchesDescription: "다른 검색어를 사용해보세요.",
+      tipLabel: "오늘의 레시피 팁",
+      tipTitle: "식재료의 풍미를 극대화하는 시어링 기법",
+      tipBody:
+        "고기나 식재료를 높은 온도에서 빠르게 익혀 마이야르 반응을 일으키는 것은 작은 온도에서 삶는 것과의 차이를 결정하는 핵심입니다. 팬을 충분히 예열하는 것부터 시작하세요.",
+      tipCta: "전문 셰프 가이드 보기",
+      aiBannerLabel: "AI 레시피 생성기",
+      aiBannerTitle: "새로운 레시피를 오늘 AI로 생성해보세요",
+      aiBannerCta: "바로 시작"
+    },
+    add: {
+      title: "레시피 추가",
+      eyebrow: "새 레시피",
+      aiSupportLabel: "현재 AI 지원",
+      aiSupportTitle: "유튜브 쇼츠만 지원",
+      aiSupportDescription:
+        "AI 초안 생성은 현재 유튜브 쇼츠 링크에서만 동작합니다. 다른 링크도 수동으로 저장할 수 있어요.",
+      urlRequired: "URL을 입력해주세요.",
+      urlProtocol: "http:// 또는 https://로 시작하는 URL을 입력해주세요.",
+      aiOnlySupport:
+        "AI 초안 생성은 현재 유튜브 쇼츠만 지원합니다. 그래도 수동으로 계속할 수 있어요.",
+      insufficientContext:
+        "영상에서 레시피 정보를 충분히 추출하지 못했습니다. 직접 입력으로 계속해주세요.",
+      aiFailed: "AI 초안 생성에 실패했습니다. 직접 입력으로 계속해주세요.",
+      delayed: "초안 생성이 지연되고 있습니다. 직접 입력으로 계속해주세요.",
+      saveUrlOnlyFailed: "링크 저장에 실패했습니다.",
+      saveUrlOnlySuccess: "링크가 저장되었습니다. 세부 내용은 나중에 수정할 수 있어요.",
+      generateWithAi: "AI로 초안 만들기",
+      saveUrlOnly: "URL만 저장",
+      savingUrlOnly: "링크 저장 중...",
+      reviewDraft: "초안 검토",
+      draft: "초안",
+      titleLabel: "제목",
+      titlePlaceholder: "레시피 제목",
+      ingredientsLabel: "재료",
+      preparationLabel: "조리 과정",
+      cancel: "취소",
+      saveToLibrary: "보관함에 저장"
+    },
+    manual: {
+      title: "새 레시피",
+      eyebrow: "직접 작성",
+      sourceUrl: "원본 URL",
+      titleLabel: "제목",
+      titlePlaceholder: "레시피 제목",
+      ingredientsLabel: "재료",
+      preparationLabel: "조리 과정",
+      cancel: "취소",
+      saveToLibrary: "보관함에 저장"
+    },
+    edit: {
+      title: "레시피 수정",
+      badge: "수정",
+      sourceUrl: "원본 URL",
+      titleLabel: "제목",
+      ingredientsLabel: "재료",
+      preparationLabel: "조리 과정",
+      cancel: "취소",
+      saveChanges: "변경 사항 저장",
+      success: "레시피가 수정되었습니다",
+      failure: "수정 실패"
+    },
+    detail: {
+      title: "레시피 상세",
+      ingredients: "재료",
+      preparation: "조리 과정",
+      noIngredients: "아직 재료가 없습니다. 수정 화면에서 나중에 추가할 수 있어요.",
+      noSteps: "아직 조리 과정이 없습니다. 링크를 먼저 저장하고 나중에 정리해도 됩니다.",
+      edit: "수정",
+      delete: "삭제"
+    },
+    saved: {
+      title: "저장됨",
+      subtitle: "저장한 레시피 모음입니다.",
+      emptyTitle: "저장된 레시피가 없습니다",
+      emptyDescription: "레시피 상세 페이지에서 북마크 버튼을 눌러보세요."
+    },
+    profile: {
+      recipesSaved: "저장된 레시피 {count}개",
+      languageTitle: "앱 언어",
+      languageDescription: "화면의 안내 문구와 버튼 텍스트를 한국어 또는 영어로 바꿀 수 있어요.",
+      korean: "한국어",
+      english: "영어",
+      signOut: "로그아웃"
+    },
+    actions: {
+      recipeSaved: "레시피가 저장되었습니다",
+      saveFailed: "저장 실패",
+      deleted: "레시피가 삭제되었습니다",
+      deleteFailed: "삭제 실패",
+      savedOn: "저장됨",
+      unsaved: "저장 해제됨"
+    },
+    deleteModal: {
+      title: "레시피 삭제",
+      description: "“{title}”을 삭제할까요? 되돌릴 수 없습니다.",
+      cancel: "취소",
+      delete: "삭제"
+    },
+    editors: {
+      ingredientPlaceholder: "재료 {count}",
+      addIngredient: "재료 추가",
+      stepPlaceholder: "{count}단계 설명",
+      addStep: "단계 추가"
+    }
+  },
+  en: {
+    bottomNav: { library: "LIBRARY", add: "ADD", scrap: "SAVED", profile: "PROFILE" },
+    sourceBadge: { youtube: "YouTube", instagram: "Instagram", link: "Link", ai: "AI" },
+    auth: {
+      welcomeBack: "Welcome back",
+      createAccount: "Create account",
+      signInDescription: "Sign in to continue using PantryClip.",
+      signUpDescription: "Save short cooking videos as your own recipes.",
+      email: "Email",
+      password: "Password",
+      forgotPassword: "Forgot Password?",
+      loading: "Loading...",
+      login: "Login",
+      createAccountCta: "Create Account",
+      orContinueWith: "or continue with",
+      socialComingSoon: "Social login coming soon",
+      dontHaveAccount: "Don't have an account?",
+      alreadyHaveAccount: "Already have an account?",
+      signUpSwitch: "Sign Up",
+      signInSwitch: "Sign In",
+      signUpNotice: "Your account was created. Please check your email to confirm it.",
+      authFailed: "Authentication failed."
+    },
+    library: {
+      title: "My Recipes",
+      subtitle: "Manage your personal recipe collection and explore new flavors.",
+      addRecipe: "Add Recipe",
+      searchPlaceholder: "Search recipes...",
+      loadError: "Failed to load recipes.",
+      recentRecipes: "Recent Recipes",
+      noRecipes: "No recipes yet",
+      noRecipesDescription: "Paste a link to add your first recipe.",
+      noMatches: "No matches",
+      noMatchesDescription: "Try a different search.",
+      tipLabel: "Recipe Tip of the Day",
+      tipTitle: "Searing technique to maximize ingredient flavor",
+      tipBody:
+        "Quickly searing meat or other ingredients over high heat creates the Maillard reaction and changes the final dish dramatically. Start by preheating the pan properly.",
+      tipCta: "Check Professional Chef Guide",
+      aiBannerLabel: "AI Recipe Generator",
+      aiBannerTitle: "Generate your next recipe draft with AI today",
+      aiBannerCta: "START NOW"
+    },
+    add: {
+      title: "Add Recipe",
+      eyebrow: "Add New Recipe",
+      aiSupportLabel: "Current AI Support",
+      aiSupportTitle: "YouTube Shorts only",
+      aiSupportDescription:
+        "AI draft generation currently works only with YouTube Shorts links. Other links can still be saved manually.",
+      urlRequired: "Please enter a URL.",
+      urlProtocol: "Please enter a URL starting with http:// or https://.",
+      aiOnlySupport:
+        "AI draft generation currently supports YouTube Shorts only. You can still continue manually.",
+      insufficientContext:
+        "We couldn't extract enough recipe information from this video. Please continue manually.",
+      aiFailed: "AI draft generation failed. Please continue manually.",
+      delayed: "Draft generation is taking longer than expected. Please continue manually.",
+      saveUrlOnlyFailed: "Failed to save the link.",
+      saveUrlOnlySuccess: "The link was saved. You can add the recipe details later.",
+      generateWithAi: "Generate with AI",
+      saveUrlOnly: "Save URL Only",
+      savingUrlOnly: "Saving URL...",
+      reviewDraft: "Review Draft",
+      draft: "Draft",
+      titleLabel: "Title",
+      titlePlaceholder: "Recipe title",
+      ingredientsLabel: "Ingredients",
+      preparationLabel: "Preparation",
+      cancel: "Cancel",
+      saveToLibrary: "Save to Library"
+    },
+    manual: {
+      title: "New Recipe",
+      eyebrow: "Write manually",
+      sourceUrl: "Source URL",
+      titleLabel: "Title",
+      titlePlaceholder: "Recipe title",
+      ingredientsLabel: "Ingredients",
+      preparationLabel: "Preparation",
+      cancel: "Cancel",
+      saveToLibrary: "Save to Library"
+    },
+    edit: {
+      title: "Edit Recipe",
+      badge: "Edit",
+      sourceUrl: "Source URL",
+      titleLabel: "Title",
+      ingredientsLabel: "Ingredients",
+      preparationLabel: "Preparation",
+      cancel: "Cancel",
+      saveChanges: "Save Changes",
+      success: "Recipe updated",
+      failure: "Update failed"
+    },
+    detail: {
+      title: "Recipe Details",
+      ingredients: "Ingredients",
+      preparation: "Preparation",
+      noIngredients: "No ingredients yet. You can add them later from Edit.",
+      noSteps: "No preparation steps yet. You can save the link first and organize it later.",
+      edit: "Edit",
+      delete: "Delete"
+    },
+    saved: {
+      title: "Saved",
+      subtitle: "Your saved recipes collection.",
+      emptyTitle: "No saved recipes yet",
+      emptyDescription: "Use the bookmark button on a recipe detail page."
+    },
+    profile: {
+      recipesSaved: "{count} recipes saved",
+      languageTitle: "App language",
+      languageDescription:
+        "Switch interface copy and buttons between Korean and English. Recipe content stays as originally generated or written.",
+      korean: "Korean",
+      english: "English",
+      signOut: "Sign Out"
+    },
+    actions: {
+      recipeSaved: "Recipe saved",
+      saveFailed: "Save failed",
+      deleted: "Recipe deleted",
+      deleteFailed: "Delete failed",
+      savedOn: "Saved",
+      unsaved: "Removed from saved"
+    },
+    deleteModal: {
+      title: "Delete Recipe",
+      description: "Delete “{title}”? This cannot be undone.",
+      cancel: "Cancel",
+      delete: "Delete"
+    },
+    editors: {
+      ingredientPlaceholder: "Ingredient {count}",
+      addIngredient: "Add ingredient",
+      stepPlaceholder: "Describe step {count}",
+      addStep: "Add step"
+    }
+  }
+} as const;
+
+function replaceCount(template: string, count: number) {
+  return template.replace("{count}", String(count));
+}
+
+function replaceTitle(template: string, title: string) {
+  return template.replace("{title}", title);
 }
 
 function toRecipe(dto: RecipeDto): Recipe {
@@ -98,7 +442,7 @@ function toRecipe(dto: RecipeDto): Recipe {
     stepsText: dto.stepsText,
     summarySource: dto.summarySource,
     isSaved: dto.isSaved,
-    updatedAtLabel: toUpdatedAtLabel(dto.updatedAt)
+    updatedAt: dto.updatedAt
   };
 }
 
@@ -112,11 +456,6 @@ const IcBook = ({ className }: { className?: string }) => (
 const IcSearch = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-  </svg>
-);
-const IcBell = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
   </svg>
 );
 const IcSettings = ({ className }: { className?: string }) => (
@@ -209,9 +548,10 @@ const IcInstagram = ({ className }: { className?: string }) => (
 
 // ─── List editors ────────────────────────────────────────────────────────────
 
-function IngredientListEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function IngredientListEditor({ value, onChange, language }: { value: string; onChange: (v: string) => void; language: Language }) {
   const items = value.split("\n").map((l) => l.replace(/^-+\s*/, "").trim());
   const list = items.length > 0 ? items : [""];
+  const editorCopy = copy[language].editors;
 
   // Serialize: keep empty rows while editing, only strip on save (validateDraft handles that)
   const serialize = (rows: string[]) => rows.map((i) => `- ${i}`).join("\n");
@@ -224,7 +564,7 @@ function IngredientListEditor({ value, onChange }: { value: string; onChange: (v
           <input
             className="h-10 flex-1 rounded-lg border-0 bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             value={item}
-            placeholder={`재료 ${i + 1}`}
+            placeholder={replaceCount(editorCopy.ingredientPlaceholder, i + 1)}
             onChange={(e) => {
               const next = [...list];
               next[i] = e.target.value;
@@ -260,15 +600,16 @@ function IngredientListEditor({ value, onChange }: { value: string; onChange: (v
         className="flex items-center gap-1.5 text-[11px] font-bold text-primary"
         onClick={() => onChange(serialize([...list, ""]))}
       >
-        <IcPlus className="h-3.5 w-3.5" /> Add ingredient
+        <IcPlus className="h-3.5 w-3.5" /> {editorCopy.addIngredient}
       </button>
     </div>
   );
 }
 
-function StepListEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function StepListEditor({ value, onChange, language }: { value: string; onChange: (v: string) => void; language: Language }) {
   const items = value.split("\n").map((l) => l.replace(/^\d+\.\s*/, "").trim());
   const list = items.length > 0 ? items : [""];
+  const editorCopy = copy[language].editors;
 
   const serialize = (rows: string[]) => rows.map((s, i) => `${i + 1}. ${s}`).join("\n");
 
@@ -282,7 +623,7 @@ function StepListEditor({ value, onChange }: { value: string; onChange: (v: stri
           <textarea
             className="min-h-[60px] flex-1 resize-none rounded-lg border-0 bg-card px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             value={step}
-            placeholder={`${i + 1}단계 설명`}
+            placeholder={replaceCount(editorCopy.stepPlaceholder, i + 1)}
             rows={2}
             onChange={(e) => {
               const next = [...list];
@@ -306,7 +647,7 @@ function StepListEditor({ value, onChange }: { value: string; onChange: (v: stri
         className="flex items-center gap-1.5 text-[11px] font-bold text-primary"
         onClick={() => onChange(serialize([...list, ""]))}
       >
-        <IcPlus className="h-3.5 w-3.5" /> Add step
+        <IcPlus className="h-3.5 w-3.5" /> {editorCopy.addStep}
       </button>
     </div>
   );
@@ -314,9 +655,10 @@ function StepListEditor({ value, onChange }: { value: string; onChange: (v: stri
 
 // ─── Shared badge ────────────────────────────────────────────────────────────
 
-function SourceBadge({ sourceType, summarySource, overlay = false }: {
+function SourceBadge({ sourceType, summarySource, language, overlay = false }: {
   sourceType: SourceType;
   summarySource?: SummarySource;
+  language: Language;
   overlay?: boolean;
 }) {
   const base = overlay
@@ -328,25 +670,25 @@ function SourceBadge({ sourceType, summarySource, overlay = false }: {
       {sourceType === "youtube_shorts" && (
         <span className={`${base} ${!overlay ? "bg-[#ff0000]/15 text-[#ff4444]" : ""}`}>
           <IcYouTube className="h-3 w-3" />
-          YouTube
+          {copy[language].sourceBadge.youtube}
         </span>
       )}
       {sourceType === "instagram_reels" && (
         <span className={`${base} ${!overlay ? "bg-primary/15 text-primary" : ""}`}>
           <IcInstagram className="h-3 w-3" />
-          Instagram
+          {copy[language].sourceBadge.instagram}
         </span>
       )}
       {sourceType === "other" && (
         <span className={`${base} ${!overlay ? "bg-muted text-muted-foreground" : ""}`}>
           <IcLink className="h-3 w-3" />
-          Link
+          {copy[language].sourceBadge.link}
         </span>
       )}
       {summarySource === "ai" && (
         <span className={`${base} ${!overlay ? "bg-muted text-muted-foreground" : ""}`}>
           <IcBolt className="h-3 w-3" />
-          AI
+          {copy[language].sourceBadge.ai}
         </span>
       )}
     </div>
@@ -379,6 +721,37 @@ function ImgPlaceholder({ className }: { className?: string }) {
   );
 }
 
+function RecipeThumbnail({
+  recipe,
+  alt,
+  className
+}: {
+  recipe: Pick<Recipe, "sourceType" | "sourceUrl">;
+  alt: string;
+  className?: string;
+}) {
+  const candidates = getRecipeThumbnailCandidates(recipe);
+  const [candidateIndex, setCandidateIndex] = useState(0);
+
+  const src = candidates[candidateIndex];
+
+  if (!src) {
+    return <ImgPlaceholder className={className} />;
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      onError={() => {
+        setCandidateIndex((current) => current + 1);
+      }}
+    />
+  );
+}
+
 function Divider({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-3">
@@ -389,18 +762,20 @@ function Divider({ label }: { label: string }) {
   );
 }
 
-function BottomNav({ activeTab, onLibrary, onAdd, onScrap, onProfile }: {
+function BottomNav({ activeTab, language, onLibrary, onAdd, onScrap, onProfile }: {
   activeTab: Tab;
+  language: Language;
   onLibrary: () => void;
   onAdd: () => void;
   onScrap: () => void;
   onProfile: () => void;
 }) {
+  const navCopy = copy[language].bottomNav;
   const tabs = [
-    { id: "library" as Tab, label: "LIBRARY", icon: <IcBook className="h-[22px] w-[22px]" />,     action: onLibrary },
-    { id: "add"     as Tab, label: "ADD",      icon: <IcPlus className="h-[22px] w-[22px]" />,     action: onAdd     },
-    { id: "scrap"   as Tab, label: "SAVED",    icon: <IcBookmark className="h-[22px] w-[22px]" />, action: onScrap   },
-    { id: "profile" as Tab, label: "PROFILE",  icon: <IcUser className="h-[22px] w-[22px]" />,     action: onProfile },
+    { id: "library" as Tab, label: navCopy.library, icon: <IcBook className="h-[22px] w-[22px]" />,     action: onLibrary },
+    { id: "add"     as Tab, label: navCopy.add,      icon: <IcPlus className="h-[22px] w-[22px]" />,     action: onAdd     },
+    { id: "scrap"   as Tab, label: navCopy.scrap,    icon: <IcBookmark className="h-[22px] w-[22px]" />, action: onScrap   },
+    { id: "profile" as Tab, label: navCopy.profile,  icon: <IcUser className="h-[22px] w-[22px]" />,     action: onProfile },
   ];
   return (
     <div className="mx-3 mb-3 flex items-center justify-around rounded-2xl bg-card px-1 py-2">
@@ -440,6 +815,7 @@ function BottomNav({ activeTab, onLibrary, onAdd, onScrap, onProfile }: {
 
 export function RecipesHomeContainer() {
   const { isReady, session, signInWithPassword, signOut, signUpWithPassword } = useAuth();
+  const [language, setLanguage]               = useState<Language>("ko");
   const [screen, setScreen]                   = useState<Screen>("auth");
   const [searchQuery, setSearchQuery]         = useState("");
   const [recipes, setRecipes]                 = useState<Recipe[]>([]);
@@ -468,6 +844,7 @@ export function RecipesHomeContainer() {
   const hasDraft = draft.sourceUrl.trim() !== "";
 
   const selectedRecipe = useMemo(() => recipes.find((r) => r.id === selectedRecipeId) ?? null, [recipes, selectedRecipeId]);
+  const ui = copy[language];
   const filteredRecipes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return q ? recipes.filter((r) => r.title.toLowerCase().includes(q)) : recipes;
@@ -480,6 +857,22 @@ export function RecipesHomeContainer() {
     if (screen === "profile") return "profile";
     return "library";
   }, [screen]);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+
+    if (stored === "ko" || stored === "en") {
+      setLanguage(stored);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  }, [language]);
+
+  useEffect(() => {
+    document.documentElement.lang = language === "ko" ? "ko" : "en";
+  }, [language]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -497,10 +890,10 @@ export function RecipesHomeContainer() {
         setRecipes(items);
         setSelectedRecipeId((c) => c || items[0]?.id || "");
       } catch (err) {
-        setRecipesError(err instanceof Error ? err.message : "레시피를 불러오지 못했습니다.");
+        setRecipesError(err instanceof Error ? err.message : ui.library.loadError);
       }
     })();
-  }, [isReady, session]);
+  }, [isReady, session, ui.library.loadError]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -532,23 +925,23 @@ export function RecipesHomeContainer() {
     try {
       if (authMode === "sign_up") {
         await signUpWithPassword(authEmail.trim(), authPassword);
-        setAuthNotice("계정이 생성되었습니다. 이메일을 확인하여 인증을 완료해주세요.");
+        setAuthNotice(ui.auth.signUpNotice);
         setAuthPassword(""); return;
       }
       await signInWithPassword(authEmail.trim(), authPassword);
       setScreen("list");
     } catch (err) {
-      setAuthError(err instanceof Error ? err.message : "인증에 실패했습니다.");
+      setAuthError(err instanceof Error ? err.message : ui.auth.authFailed);
     } finally { setAuthBusy(false); }
   };
 
   // AI generate — stays on "add" screen, draft appears inline
   const handleGenerate = async () => {
     const sourceUrl = addUrl.trim();
-    if (!sourceUrl) { setUrlError("URL을 입력해주세요."); return; }
-    if (!/^https?:\/\//i.test(sourceUrl)) { setUrlError("http:// 또는 https://로 시작하는 URL을 입력해주세요."); return; }
+    if (!sourceUrl) { setUrlError(ui.add.urlRequired); return; }
+    if (!/^https?:\/\//i.test(sourceUrl)) { setUrlError(ui.add.urlProtocol); return; }
     if (inferSourceType(sourceUrl) !== "youtube_shorts") {
-      setUrlError("AI draft generation currently supports YouTube Shorts only. You can still continue manually.");
+      setUrlError(ui.add.aiOnlySupport);
       openManualDraft(sourceUrl);
       return;
     }
@@ -579,13 +972,13 @@ export function RecipesHomeContainer() {
         }
 
         if (job.status === "insufficient_context") {
-          setUrlError(job.error?.message ?? "영상에서 레시피 정보를 충분히 추출하지 못했습니다. 직접 입력으로 계속해주세요.");
+          setUrlError(job.error?.message ?? ui.add.insufficientContext);
           openManualDraft(sourceUrl);
           return;
         }
 
         if (job.status === "failed") {
-          setUrlError(job.error?.message ?? "AI 초안 생성에 실패했습니다. 직접 입력으로 계속해주세요.");
+          setUrlError(job.error?.message ?? ui.add.aiFailed);
           openManualDraft(sourceUrl);
           return;
         }
@@ -595,20 +988,20 @@ export function RecipesHomeContainer() {
 
       setUrlError(
         nextStatus === "queued" || nextStatus === "extracting" || nextStatus === "summarizing"
-          ? "초안 생성이 지연되고 있습니다. 직접 입력으로 계속해주세요."
-          : "AI 초안 생성에 실패했습니다."
+          ? ui.add.delayed
+          : ui.add.aiFailed
       );
       openManualDraft(sourceUrl);
     } catch (err) {
-      setUrlError(err instanceof Error ? err.message : "AI 초안 생성에 실패했습니다.");
+      setUrlError(err instanceof Error ? err.message : ui.add.aiFailed);
       openManualDraft(sourceUrl);
     } finally { setIsGenerating(false); setSummarizeJobStatus(null); }
   };
 
   const handleSaveUrlOnly = async () => {
     const sourceUrl = addUrl.trim();
-    if (!sourceUrl) { setUrlError("URL을 입력해주세요."); return; }
-    if (!/^https?:\/\//i.test(sourceUrl)) { setUrlError("http:// 또는 https://로 시작하는 URL을 입력해주세요."); return; }
+    if (!sourceUrl) { setUrlError(ui.add.urlRequired); return; }
+    if (!/^https?:\/\//i.test(sourceUrl)) { setUrlError(ui.add.urlProtocol); return; }
 
     setUrlError("");
     setIsSavingUrlOnly(true);
@@ -616,16 +1009,17 @@ export function RecipesHomeContainer() {
     try {
       const created = await saveRecipeUrlRequest({
         sourceUrl,
-        title: draft.sourceUrl.trim() === sourceUrl ? draft.title.trim() || undefined : undefined
+        title: draft.sourceUrl.trim() === sourceUrl ? draft.title.trim() || undefined : undefined,
+        language
       });
       const next = toRecipe(created);
       setRecipes((c) => [next, ...c]);
       setSelectedRecipeId(next.id);
       resetDraft();
       setScreen("detail");
-      showToast("링크가 저장되었습니다. 세부 내용은 나중에 수정할 수 있어요.");
+      showToast(ui.add.saveUrlOnlySuccess);
     } catch (err) {
-      setUrlError(err instanceof Error ? err.message : "URL 저장에 실패했습니다.");
+      setUrlError(err instanceof Error ? err.message : ui.add.saveUrlOnlyFailed);
     } finally {
       setIsSavingUrlOnly(false);
     }
@@ -633,7 +1027,7 @@ export function RecipesHomeContainer() {
 
   // Save AI draft directly from inline review card
   const handleSaveAiDraft = async () => {
-    const errors = validateDraft(draft);
+    const errors = validateDraft(draft, language);
     setDraftErrors(errors);
     if (Object.keys(errors).length > 0) return;
     try {
@@ -647,15 +1041,15 @@ export function RecipesHomeContainer() {
       setSelectedRecipeId(next.id);
       resetDraft();
       setScreen("detail");
-      showToast("레시피가 저장되었습니다");
+      showToast(ui.actions.recipeSaved);
     } catch (err) {
-      setDraftErrors((c) => ({ ...c, title: err instanceof Error ? err.message : "저장 실패" }));
+      setDraftErrors((c) => ({ ...c, title: err instanceof Error ? err.message : ui.actions.saveFailed }));
     }
   };
 
   // Save manual entry (from "review" screen)
   const handleSaveManual = async () => {
-    const errors = validateDraft(draft);
+    const errors = validateDraft(draft, language);
     setDraftErrors(errors);
     if (Object.keys(errors).length > 0) return;
     try {
@@ -669,14 +1063,14 @@ export function RecipesHomeContainer() {
       setSelectedRecipeId(next.id);
       resetDraft();
       setScreen("detail");
-      showToast("레시피가 저장되었습니다");
+      showToast(ui.actions.recipeSaved);
     } catch (err) {
-      setDraftErrors((c) => ({ ...c, title: err instanceof Error ? err.message : "저장 실패" }));
+      setDraftErrors((c) => ({ ...c, title: err instanceof Error ? err.message : ui.actions.saveFailed }));
     }
   };
 
   const handleSaveEdit = async () => {
-    const errors = validateDraft(draft);
+    const errors = validateDraft(draft, language);
     setDraftErrors(errors);
     if (Object.keys(errors).length > 0 || !selectedRecipe) return;
     try {
@@ -689,9 +1083,9 @@ export function RecipesHomeContainer() {
       setRecipes((c) => c.map((r) => r.id === selectedRecipe.id ? next : r));
       setSelectedRecipeId(next.id);
       setScreen("detail");
-      showToast("레시피가 수정되었습니다");
+      showToast(ui.edit.success);
     } catch (err) {
-      setDraftErrors((c) => ({ ...c, title: err instanceof Error ? err.message : "수정 실패" }));
+      setDraftErrors((c) => ({ ...c, title: err instanceof Error ? err.message : ui.edit.failure }));
     }
   };
 
@@ -703,7 +1097,7 @@ export function RecipesHomeContainer() {
     try {
       const updated = await toggleSaveRecipeRequest(selectedRecipe.id, next);
       setRecipes((c) => c.map((r) => r.id === selectedRecipe.id ? toRecipe(updated) : r));
-      showToast(next ? "저장됨" : "저장 해제됨");
+      showToast(next ? ui.actions.savedOn : ui.actions.unsaved);
     } catch {
       // Rollback
       setRecipes((c) => c.map((r) => r.id === selectedRecipe.id ? { ...r, isSaved: !next } : r));
@@ -726,9 +1120,9 @@ export function RecipesHomeContainer() {
       setSelectedRecipeId(remaining[0]?.id ?? "");
       setShowDeleteModal(false);
       setScreen("list");
-      showToast("레시피가 삭제되었습니다");
+      showToast(ui.actions.deleted);
     } catch (err) {
-      setRecipesError(err instanceof Error ? err.message : "삭제 실패");
+      setRecipesError(err instanceof Error ? err.message : ui.actions.deleteFailed);
       setShowDeleteModal(false);
     }
   };
@@ -765,10 +1159,10 @@ export function RecipesHomeContainer() {
                 </div>
                 <div>
                   <h1 className="text-[28px] font-bold leading-tight">
-                    {authMode === "sign_in" ? "Welcome back" : "Create account"}
+                    {authMode === "sign_in" ? ui.auth.welcomeBack : ui.auth.createAccount}
                   </h1>
                   <p className="mt-1.5 text-sm text-muted-foreground">
-                    {authMode === "sign_in" ? "Sign in to your account to continue" : "Start saving recipe clips as notes."}
+                    {authMode === "sign_in" ? ui.auth.signInDescription : ui.auth.signUpDescription}
                   </p>
                 </div>
               </div>
@@ -776,7 +1170,7 @@ export function RecipesHomeContainer() {
               <div className="space-y-5">
                 {/* Email field */}
                 <div className="space-y-2">
-                  <Label>Email</Label>
+                  <Label>{ui.auth.email}</Label>
                   <div className="relative">
                     <div className="pointer-events-none absolute inset-y-0 left-4 flex items-center">
                       <IcMail className="h-[18px] w-[18px] text-muted-foreground" />
@@ -794,10 +1188,10 @@ export function RecipesHomeContainer() {
                 {/* Password field */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label>Password</Label>
+                    <Label>{ui.auth.password}</Label>
                     {authMode === "sign_in" && (
                       <button type="button" className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary">
-                        Forgot Password?
+                        {ui.auth.forgotPassword}
                       </button>
                     )}
                   </div>
@@ -831,22 +1225,22 @@ export function RecipesHomeContainer() {
                   disabled={!isReady || authBusy}
                   onClick={() => void handleAuthSubmit()}
                 >
-                  {authBusy ? "Loading..." : authMode === "sign_in" ? "Login" : "Create Account"}
+                  {authBusy ? ui.auth.loading : authMode === "sign_in" ? ui.auth.login : ui.auth.createAccountCta}
                   {!authBusy && <IcArrow className="h-4 w-4" />}
                 </Button>
 
                 {/* TODO: Google and Apple social login */}
-                <Divider label="or continue with" />
-                <p className="text-center text-xs text-muted-foreground">Social login coming soon</p>
+                <Divider label={ui.auth.orContinueWith} />
+                <p className="text-center text-xs text-muted-foreground">{ui.auth.socialComingSoon}</p>
 
                 <p className="pt-1 text-center text-sm text-muted-foreground">
-                  {authMode === "sign_in" ? "Don't have an account? " : "Already have an account? "}
+                  {authMode === "sign_in" ? `${ui.auth.dontHaveAccount} ` : `${ui.auth.alreadyHaveAccount} `}
                   <button
                     type="button"
                     className="font-bold text-primary"
                     onClick={() => { setAuthMode((m) => m === "sign_in" ? "sign_up" : "sign_in"); setAuthError(""); setAuthNotice(""); }}
                   >
-                    {authMode === "sign_in" ? "Sign Up" : "Sign In"}
+                    {authMode === "sign_in" ? ui.auth.signUpSwitch : ui.auth.signInSwitch}
                   </button>
                 </p>
               </div>
@@ -857,16 +1251,13 @@ export function RecipesHomeContainer() {
           {screen === "list" && (
             <div className="pb-6">
               {/* Top bar */}
-              <div className="flex items-center justify-between px-5 pt-5 pb-4">
+              <div className="flex items-center px-5 pt-5 pb-4">
                 <Logo />
-                <div className="flex items-center gap-4">
-                  <button type="button" className="text-muted-foreground hover:text-foreground"><IcBell className="h-5 w-5" /></button>
-                </div>
               </div>
 
               <div className="px-5">
-                <h1 className="text-[32px] font-bold leading-tight">My Recipes</h1>
-                <p className="mt-1 text-sm text-muted-foreground">나만의 요리 컬렉션을 관리하고 새로운 맛을 탐험하세요.</p>
+                <h1 className="text-[32px] font-bold leading-tight">{ui.library.title}</h1>
+                <p className="mt-1 text-sm text-muted-foreground">{ui.library.subtitle}</p>
 
                 <Button
                   type="button"
@@ -874,7 +1265,7 @@ export function RecipesHomeContainer() {
                   onClick={() => { resetDraft(); setScreen("add"); }}
                 >
                   <IcPlus className="h-4 w-4" />
-                  Add Recipe
+                  {ui.library.addRecipe}
                 </Button>
 
                 {/* Search */}
@@ -883,7 +1274,7 @@ export function RecipesHomeContainer() {
                     <IcSearch className="h-4 w-4 text-muted-foreground" />
                   </div>
                   <Input
-                    placeholder="Search recipes..."
+                    placeholder={ui.library.searchPlaceholder}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="h-12 rounded-xl border-0 bg-card pl-10 text-sm focus-visible:ring-1 focus-visible:ring-primary"
@@ -894,21 +1285,21 @@ export function RecipesHomeContainer() {
 
                 {/* Recent Recipes header */}
                 <div className="mt-6 flex items-center justify-between">
-                  <h2 className="text-[17px] font-bold">Recent Recipes</h2>
+                  <h2 className="text-[17px] font-bold">{ui.library.recentRecipes}</h2>
                   {/* TODO: View All */}
                 </div>
 
                 {/* Empty states */}
                 {recipes.length === 0 && !recipesError && (
                   <div className="mt-4 rounded-2xl bg-card p-6 text-center">
-                    <p className="font-semibold">No recipes yet</p>
-                    <p className="mt-1 text-xs text-muted-foreground">링크를 붙여넣어 첫 번째 레시피를 추가해보세요.</p>
+                    <p className="font-semibold">{ui.library.noRecipes}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{ui.library.noRecipesDescription}</p>
                   </div>
                 )}
                 {recipes.length > 0 && filteredRecipes.length === 0 && (
                   <div className="mt-4 rounded-2xl bg-card p-6 text-center">
-                    <p className="font-semibold">No matches</p>
-                    <p className="mt-1 text-xs text-muted-foreground">다른 검색어를 사용해보세요.</p>
+                    <p className="font-semibold">{ui.library.noMatches}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{ui.library.noMatchesDescription}</p>
                   </div>
                 )}
 
@@ -921,16 +1312,15 @@ export function RecipesHomeContainer() {
                       className="w-full overflow-hidden rounded-2xl bg-card text-left transition active:scale-[0.98]"
                       onClick={() => { setSelectedRecipeId(recipe.id); setScreen("detail"); }}
                     >
-                      {/* TODO: Replace with real recipe image */}
                       <div className="relative h-[160px] w-full">
-                        <ImgPlaceholder className="h-full w-full" />
+                        <RecipeThumbnail key={recipe.sourceUrl} recipe={recipe} alt={recipe.title} className="h-full w-full object-cover" />
                         <div className="absolute right-3 top-3">
-                          <SourceBadge sourceType={recipe.sourceType} summarySource={recipe.summarySource} overlay />
+                          <SourceBadge language={language} sourceType={recipe.sourceType} summarySource={recipe.summarySource} overlay />
                         </div>
                       </div>
                       <div className="p-4">
                         <h3 className="font-bold leading-snug">{recipe.title}</h3>
-                        <p className="mt-1 text-[11px] text-muted-foreground">{recipe.updatedAtLabel}</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">{toUpdatedAtLabel(recipe.updatedAt, language)}</p>
                       </div>
                     </button>
                   ))}
@@ -938,29 +1328,27 @@ export function RecipesHomeContainer() {
 
                 {/* Recipe Tip of the Day */}
                 <div className="mt-4 rounded-2xl bg-card p-5">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">Recipe Tip of the Day</p>
-                  <p className="mt-2 font-bold leading-snug">식재료의 풍미를 극대화하는 시어링 기법</p>
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                    고기나 식재료를 높은 온도에서 빠르게 익혀 마이야르 반응을 일으키는 것은 작은 온도에서 삶는 것과의 차이를 결정하는 핵심입니다. 팬을 충분히 예열하는 것부터 시작하세요.
-                  </p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">{ui.library.tipLabel}</p>
+                  <p className="mt-2 font-bold leading-snug">{ui.library.tipTitle}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{ui.library.tipBody}</p>
                   <button type="button" className="mt-3 flex items-center gap-1.5 text-[11px] font-bold text-primary">
                     <IcUtensils className="h-3.5 w-3.5" />
-                    Check Professional Chef Guide
+                    {ui.library.tipCta}
                   </button>
                 </div>
 
                 {/* AI Recipe Generator banner */}
                 <div className="mt-4 flex items-center justify-between overflow-hidden rounded-2xl bg-primary p-5">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary-foreground/70">AI Recipe Generator</p>
-                    <p className="mt-1 text-sm font-bold leading-snug text-primary-foreground">당신의 새 레시피를 오늘 AI로 생성해보세요</p>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary-foreground/70">{ui.library.aiBannerLabel}</p>
+                    <p className="mt-1 text-sm font-bold leading-snug text-primary-foreground">{ui.library.aiBannerTitle}</p>
                     <Button
                       type="button"
                       variant="secondary"
                       className="mt-3 h-9 rounded-lg px-4 text-xs font-bold"
                       onClick={() => { resetDraft(); setScreen("add"); }}
                     >
-                      START NOW
+                      {ui.library.aiBannerCta}
                     </Button>
                   </div>
                   <div className="text-4xl text-primary-foreground/30 select-none">✦</div>
@@ -981,14 +1369,12 @@ export function RecipesHomeContainer() {
               </div>
 
               <div className="px-5">
-                <h1 className="text-[32px] font-bold leading-tight">Add Recipe</h1>
-                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Add New Recipe</p>
+                <h1 className="text-[32px] font-bold leading-tight">{ui.add.title}</h1>
+                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">{ui.add.eyebrow}</p>
                 <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/10 p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">Current AI Support</p>
-                  <p className="mt-1 text-sm font-semibold">YouTube Shorts only</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    AI draft generation currently works only with YouTube Shorts links. Other links can still be saved manually.
-                  </p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">{ui.add.aiSupportLabel}</p>
+                  <p className="mt-1 text-sm font-semibold">{ui.add.aiSupportTitle}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{ui.add.aiSupportDescription}</p>
                 </div>
 
                 {/* ── Paste URL ── */}
@@ -1013,7 +1399,7 @@ export function RecipesHomeContainer() {
                     disabled={isGenerating || isSavingUrlOnly}
                   >
                     <IcBolt className="h-[18px] w-[18px]" />
-                    {isGenerating ? toSummarizeStatusLabel(summarizeJobStatus) : "Generate with AI"}
+                    {isGenerating ? toSummarizeStatusLabel(summarizeJobStatus, language) : ui.add.generateWithAi}
                   </Button>
 
                   <Button
@@ -1024,7 +1410,7 @@ export function RecipesHomeContainer() {
                     disabled={isGenerating || isSavingUrlOnly}
                   >
                     <IcBookmark className="h-[18px] w-[18px]" />
-                    {isSavingUrlOnly ? "Saving URL..." : "Save URL Only"}
+                    {isSavingUrlOnly ? ui.add.savingUrlOnly : ui.add.saveUrlOnly}
                   </Button>
 
                   {/* Skeleton loading state */}
@@ -1050,36 +1436,38 @@ export function RecipesHomeContainer() {
                 {hasDraft && !isGenerating && (
                   <div className="mt-6">
                     <div className="flex items-center justify-between">
-                      <h2 className="text-[17px] font-bold">Review Draft</h2>
+                      <h2 className="text-[17px] font-bold">{ui.add.reviewDraft}</h2>
                       <div className="flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1">
                         <IcDot className="h-2 w-2 text-primary" />
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-primary">Draft</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-primary">{ui.add.draft}</span>
                       </div>
                     </div>
 
                     <div className="mt-3 space-y-4">
                       <div className="space-y-2">
-                        <Label>Title</Label>
+                        <Label>{ui.add.titleLabel}</Label>
                         <input
                           className="h-12 w-full rounded-xl border-0 bg-card px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                           value={draft.title}
                           onChange={(e) => setDraft((c) => ({ ...c, title: e.target.value }))}
-                          placeholder="레시피 제목"
+                          placeholder={ui.add.titlePlaceholder}
                         />
                         {draftErrors.title && <p className="text-xs text-destructive">{draftErrors.title}</p>}
                       </div>
                       <div className="space-y-2">
-                        <Label>Ingredients</Label>
+                        <Label>{ui.add.ingredientsLabel}</Label>
                         <IngredientListEditor
                           value={draft.ingredientsText}
+                          language={language}
                           onChange={(v) => setDraft((c) => ({ ...c, ingredientsText: v }))}
                         />
                         {draftErrors.ingredientsText && <p className="text-xs text-destructive">{draftErrors.ingredientsText}</p>}
                       </div>
                       <div className="space-y-2">
-                        <Label>Preparation</Label>
+                        <Label>{ui.add.preparationLabel}</Label>
                         <StepListEditor
                           value={draft.stepsText}
+                          language={language}
                           onChange={(v) => setDraft((c) => ({ ...c, stepsText: v }))}
                         />
                         {draftErrors.stepsText && <p className="text-xs text-destructive">{draftErrors.stepsText}</p>}
@@ -1093,14 +1481,14 @@ export function RecipesHomeContainer() {
                         className="h-12 flex-1 rounded-xl font-bold"
                         onClick={() => { resetDraft(); }}
                       >
-                        Cancel
+                        {ui.add.cancel}
                       </Button>
                       <Button
                         type="button"
                         className="h-12 flex-1 rounded-xl font-bold"
                         onClick={() => void handleSaveAiDraft()}
                       >
-                        Save to Library
+                        {ui.add.saveToLibrary}
                       </Button>
                     </div>
                   </div>
@@ -1119,12 +1507,12 @@ export function RecipesHomeContainer() {
                 <Logo />
               </div>
               <div className="px-5">
-                <h1 className="text-2xl font-bold">New Recipe</h1>
-                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Write manually</p>
+                <h1 className="text-2xl font-bold">{ui.manual.title}</h1>
+                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">{ui.manual.eyebrow}</p>
 
                 <div className="mt-6 space-y-4">
                   <div className="space-y-2">
-                    <Label>Source URL</Label>
+                    <Label>{ui.manual.sourceUrl}</Label>
                     <Input
                       className="h-12 rounded-xl border-0 bg-card focus-visible:ring-1 focus-visible:ring-primary"
                       value={draft.sourceUrl}
@@ -1134,27 +1522,29 @@ export function RecipesHomeContainer() {
                     {draftErrors.sourceUrl && <p className="text-xs text-destructive">{draftErrors.sourceUrl}</p>}
                   </div>
                   <div className="space-y-2">
-                    <Label>Title</Label>
+                    <Label>{ui.manual.titleLabel}</Label>
                     <Input
                       className="h-12 rounded-xl border-0 bg-card focus-visible:ring-1 focus-visible:ring-primary"
                       value={draft.title}
                       onChange={(e) => setDraft((c) => ({ ...c, title: e.target.value }))}
-                      placeholder="레시피 제목"
+                      placeholder={ui.manual.titlePlaceholder}
                     />
                     {draftErrors.title && <p className="text-xs text-destructive">{draftErrors.title}</p>}
                   </div>
                   <div className="space-y-2">
-                    <Label>Ingredients</Label>
+                    <Label>{ui.manual.ingredientsLabel}</Label>
                     <IngredientListEditor
                       value={draft.ingredientsText}
+                      language={language}
                       onChange={(v) => setDraft((c) => ({ ...c, ingredientsText: v }))}
                     />
                     {draftErrors.ingredientsText && <p className="text-xs text-destructive">{draftErrors.ingredientsText}</p>}
                   </div>
                   <div className="space-y-2">
-                    <Label>Preparation</Label>
+                    <Label>{ui.manual.preparationLabel}</Label>
                     <StepListEditor
                       value={draft.stepsText}
+                      language={language}
                       onChange={(v) => setDraft((c) => ({ ...c, stepsText: v }))}
                     />
                     {draftErrors.stepsText && <p className="text-xs text-destructive">{draftErrors.stepsText}</p>}
@@ -1163,10 +1553,10 @@ export function RecipesHomeContainer() {
 
                 <div className="mt-6 flex gap-3">
                   <Button type="button" variant="outline" className="h-12 flex-1 rounded-xl font-bold" onClick={() => setScreen("add")}>
-                    Cancel
+                    {ui.manual.cancel}
                   </Button>
                   <Button type="button" className="h-12 flex-1 rounded-xl font-bold" onClick={() => void handleSaveManual()}>
-                    Save to Library
+                    {ui.manual.saveToLibrary}
                   </Button>
                 </div>
               </div>
@@ -1184,13 +1574,13 @@ export function RecipesHomeContainer() {
               </div>
               <div className="px-5">
                 <div className="flex items-center gap-3">
-                  <h1 className="text-2xl font-bold">Edit Recipe</h1>
-                  <span className="rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Edit</span>
+                  <h1 className="text-2xl font-bold">{ui.edit.title}</h1>
+                  <span className="rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{ui.edit.badge}</span>
                 </div>
 
                 <div className="mt-6 space-y-4">
                   <div className="space-y-2">
-                    <Label>Source URL</Label>
+                    <Label>{ui.edit.sourceUrl}</Label>
                     <Input
                       className="h-12 rounded-xl border-0 bg-card focus-visible:ring-1 focus-visible:ring-primary"
                       value={draft.sourceUrl}
@@ -1199,7 +1589,7 @@ export function RecipesHomeContainer() {
                     {draftErrors.sourceUrl && <p className="text-xs text-destructive">{draftErrors.sourceUrl}</p>}
                   </div>
                   <div className="space-y-2">
-                    <Label>Title</Label>
+                    <Label>{ui.edit.titleLabel}</Label>
                     <Input
                       className="h-12 rounded-xl border-0 bg-card focus-visible:ring-1 focus-visible:ring-primary"
                       value={draft.title}
@@ -1208,17 +1598,19 @@ export function RecipesHomeContainer() {
                     {draftErrors.title && <p className="text-xs text-destructive">{draftErrors.title}</p>}
                   </div>
                   <div className="space-y-2">
-                    <Label>Ingredients</Label>
+                    <Label>{ui.edit.ingredientsLabel}</Label>
                     <IngredientListEditor
                       value={draft.ingredientsText}
+                      language={language}
                       onChange={(v) => setDraft((c) => ({ ...c, ingredientsText: v }))}
                     />
                     {draftErrors.ingredientsText && <p className="text-xs text-destructive">{draftErrors.ingredientsText}</p>}
                   </div>
                   <div className="space-y-2">
-                    <Label>Preparation</Label>
+                    <Label>{ui.edit.preparationLabel}</Label>
                     <StepListEditor
                       value={draft.stepsText}
+                      language={language}
                       onChange={(v) => setDraft((c) => ({ ...c, stepsText: v }))}
                     />
                     {draftErrors.stepsText && <p className="text-xs text-destructive">{draftErrors.stepsText}</p>}
@@ -1227,10 +1619,10 @@ export function RecipesHomeContainer() {
 
                 <div className="mt-6 flex gap-3">
                   <Button type="button" variant="outline" className="h-12 flex-1 rounded-xl font-bold" onClick={() => setScreen("detail")}>
-                    Cancel
+                    {ui.edit.cancel}
                   </Button>
                   <Button type="button" className="h-12 flex-1 rounded-xl font-bold" onClick={() => void handleSaveEdit()}>
-                    Save Changes
+                    {ui.edit.saveChanges}
                   </Button>
                 </div>
               </div>
@@ -1244,7 +1636,7 @@ export function RecipesHomeContainer() {
               <div className="flex items-center justify-between px-5 pt-5 pb-4">
                 <button type="button" onClick={() => setScreen("list")} className="flex items-center gap-1.5 font-bold text-primary">
                   <IcLeft className="h-5 w-5" />
-                  <span className="text-sm">Recipe Details</span>
+                  <span className="text-sm">{ui.detail.title}</span>
                 </button>
                 <div className="flex items-center gap-4">
                   <button type="button" className="text-muted-foreground"><IcShare className="h-5 w-5" /></button>
@@ -1258,14 +1650,13 @@ export function RecipesHomeContainer() {
                 </div>
               </div>
 
-              {/* Hero image — TODO: replace with real image */}
-              <ImgPlaceholder className="mx-5 h-[220px] rounded-2xl" />
+              <RecipeThumbnail key={selectedRecipe.sourceUrl} recipe={selectedRecipe} alt={selectedRecipe.title} className="mx-5 h-[220px] w-[calc(100%-2.5rem)] rounded-2xl object-cover" />
 
               <div className="mt-5 px-5">
                 {/* Badges + meta */}
                 <div className="flex items-center justify-between">
-                  <SourceBadge sourceType={selectedRecipe.sourceType} summarySource={selectedRecipe.summarySource} />
-                  <span className="text-[11px] text-muted-foreground">{selectedRecipe.updatedAtLabel}</span>
+                  <SourceBadge language={language} sourceType={selectedRecipe.sourceType} summarySource={selectedRecipe.summarySource} />
+                  <span className="text-[11px] text-muted-foreground">{toUpdatedAtLabel(selectedRecipe.updatedAt, language)}</span>
                 </div>
 
                 <h1 className="mt-3 text-[26px] font-bold leading-tight">{selectedRecipe.title}</h1>
@@ -1285,7 +1676,7 @@ export function RecipesHomeContainer() {
 
                 {/* Ingredients */}
                 <div className="mt-6">
-                  <Label>Ingredients</Label>
+                  <Label>{ui.detail.ingredients}</Label>
                   {toIngredientItems(selectedRecipe.ingredientsText).length > 0 ? (
                     <div className="mt-3 space-y-1.5">
                       {toIngredientItems(selectedRecipe.ingredientsText).map((item) => (
@@ -1296,14 +1687,14 @@ export function RecipesHomeContainer() {
                     </div>
                   ) : (
                     <div className="mt-3 rounded-xl bg-card px-4 py-4 text-sm text-muted-foreground">
-                      아직 재료가 없습니다. Edit에서 나중에 추가할 수 있어요.
+                      {ui.detail.noIngredients}
                     </div>
                   )}
                 </div>
 
                 {/* Preparation */}
                 <div className="mt-6">
-                  <Label>Preparation</Label>
+                  <Label>{ui.detail.preparation}</Label>
                   {toStepItems(selectedRecipe.stepsText).length > 0 ? (
                     <div className="mt-3 space-y-2">
                       {toStepItems(selectedRecipe.stepsText).map((step, i) => (
@@ -1317,15 +1708,15 @@ export function RecipesHomeContainer() {
                     </div>
                   ) : (
                     <div className="mt-3 rounded-xl bg-card px-4 py-4 text-sm text-muted-foreground">
-                      아직 조리 과정이 없습니다. 링크를 먼저 저장하고 나중에 정리해도 됩니다.
+                      {ui.detail.noSteps}
                     </div>
                   )}
                 </div>
 
                 {/* Edit / Delete */}
                 <div className="mt-6 flex gap-3">
-                  <Button type="button" variant="outline" className="h-12 flex-1 rounded-xl font-bold" onClick={openEdit}>Edit</Button>
-                  <Button type="button" variant="destructive" className="h-12 flex-1 rounded-xl font-bold" onClick={() => setShowDeleteModal(true)}>Delete</Button>
+                  <Button type="button" variant="outline" className="h-12 flex-1 rounded-xl font-bold" onClick={openEdit}>{ui.detail.edit}</Button>
+                  <Button type="button" variant="destructive" className="h-12 flex-1 rounded-xl font-bold" onClick={() => setShowDeleteModal(true)}>{ui.detail.delete}</Button>
                 </div>
               </div>
             </div>
@@ -1338,8 +1729,8 @@ export function RecipesHomeContainer() {
                 <Logo />
               </div>
               <div className="px-5">
-                <h1 className="text-[32px] font-bold leading-tight">Saved</h1>
-                <p className="mt-1 text-sm text-muted-foreground">저장한 레시피 모음입니다.</p>
+                <h1 className="text-[32px] font-bold leading-tight">{ui.saved.title}</h1>
+                <p className="mt-1 text-sm text-muted-foreground">{ui.saved.subtitle}</p>
 
                 {recipes.filter((r) => r.isSaved).length === 0 ? (
                   <div className="mt-8 flex flex-col items-center gap-4 py-12 text-center">
@@ -1347,8 +1738,8 @@ export function RecipesHomeContainer() {
                       <IcBookmark className="h-7 w-7 text-muted-foreground" />
                     </div>
                     <div>
-                      <p className="font-semibold">저장된 레시피가 없습니다</p>
-                      <p className="mt-1 text-sm text-muted-foreground">레시피 상세 페이지에서 북마크 버튼을 눌러보세요.</p>
+                      <p className="font-semibold">{ui.saved.emptyTitle}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{ui.saved.emptyDescription}</p>
                     </div>
                   </div>
                 ) : (
@@ -1361,9 +1752,9 @@ export function RecipesHomeContainer() {
                         onClick={() => { setSelectedRecipeId(recipe.id); setScreen("detail"); }}
                       >
                         <div className="relative h-[140px] w-full">
-                          <ImgPlaceholder className="h-full w-full" />
+                          <RecipeThumbnail key={recipe.sourceUrl} recipe={recipe} alt={recipe.title} className="h-full w-full object-cover" />
                           <div className="absolute right-3 top-3">
-                            <SourceBadge sourceType={recipe.sourceType} summarySource={recipe.summarySource} overlay />
+                            <SourceBadge language={language} sourceType={recipe.sourceType} summarySource={recipe.summarySource} overlay />
                           </div>
                           <div className="absolute left-3 top-3">
                             <IcBookmark className="h-4 w-4 fill-primary text-primary" />
@@ -1371,7 +1762,7 @@ export function RecipesHomeContainer() {
                         </div>
                         <div className="p-4">
                           <h3 className="font-bold leading-snug">{recipe.title}</h3>
-                          <p className="mt-1 text-[11px] text-muted-foreground">{recipe.updatedAtLabel}</p>
+                          <p className="mt-1 text-[11px] text-muted-foreground">{toUpdatedAtLabel(recipe.updatedAt, language)}</p>
                         </div>
                       </button>
                     ))}
@@ -1393,10 +1784,32 @@ export function RecipesHomeContainer() {
                     <IcUser className="h-9 w-9 text-muted-foreground" />
                   </div>
                   <p className="mt-4 font-bold">{session?.user.email}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{recipes.length}개의 레시피 저장됨</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{replaceCount(ui.profile.recipesSaved, recipes.length)}</p>
                 </div>
-                <Button type="button" variant="outline" className="h-12 w-full rounded-xl font-bold" onClick={() => void signOut()}>
-                  Sign Out
+                <div className="rounded-2xl bg-card p-4">
+                  <p className="text-sm font-bold">{ui.profile.languageTitle}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{ui.profile.languageDescription}</p>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant={language === "ko" ? "default" : "outline"}
+                      className="h-11 rounded-xl font-bold"
+                      onClick={() => setLanguage("ko")}
+                    >
+                      {ui.profile.korean}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={language === "en" ? "default" : "outline"}
+                      className="h-11 rounded-xl font-bold"
+                      onClick={() => setLanguage("en")}
+                    >
+                      {ui.profile.english}
+                    </Button>
+                  </div>
+                </div>
+                <Button type="button" variant="outline" className="mt-4 h-12 w-full rounded-xl font-bold" onClick={() => void signOut()}>
+                  {ui.profile.signOut}
                 </Button>
               </div>
             </div>
@@ -1408,6 +1821,7 @@ export function RecipesHomeContainer() {
         {!!session && screen !== "auth" && (
           <BottomNav
             activeTab={activeTab}
+            language={language}
             onLibrary={() => setScreen("list")}
             onAdd={() => { resetDraft(); setScreen("add"); }}
             onScrap={() => setScreen("scrap")}
@@ -1420,11 +1834,11 @@ export function RecipesHomeContainer() {
           <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/60">
             <div className="w-full rounded-t-3xl bg-card p-6 pb-8">
               <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-muted" />
-              <h2 className="text-lg font-bold">레시피 삭제</h2>
-              <p className="mt-2 text-sm text-muted-foreground">&ldquo;{selectedRecipe.title}&rdquo;을 삭제할까요? 되돌릴 수 없습니다.</p>
+              <h2 className="text-lg font-bold">{ui.deleteModal.title}</h2>
+              <p className="mt-2 text-sm text-muted-foreground">{replaceTitle(ui.deleteModal.description, selectedRecipe.title)}</p>
               <div className="mt-6 flex gap-3">
-                <Button type="button" variant="outline" className="h-12 flex-1 rounded-xl font-bold" onClick={() => setShowDeleteModal(false)}>Cancel</Button>
-                <Button type="button" variant="destructive" className="h-12 flex-1 rounded-xl font-bold" onClick={() => void handleDelete()}>Delete</Button>
+                <Button type="button" variant="outline" className="h-12 flex-1 rounded-xl font-bold" onClick={() => setShowDeleteModal(false)}>{ui.deleteModal.cancel}</Button>
+                <Button type="button" variant="destructive" className="h-12 flex-1 rounded-xl font-bold" onClick={() => void handleDelete()}>{ui.deleteModal.delete}</Button>
               </div>
             </div>
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import type { Session } from "@supabase/supabase-js";
-import { createContext, type ReactNode,useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 
 import { getSupabaseBrowserClient } from "@/src/lib/auth/supabase-client";
 
@@ -23,10 +23,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
 
-    void supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setIsReady(true);
-    });
+    const bootstrapSession = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+
+        if (error) {
+          console.warn("Supabase session bootstrap failed; clearing local auth state.", error);
+          await supabase.auth.signOut({ scope: "local" });
+          setSession(null);
+          setIsReady(true);
+          return;
+        }
+
+        setSession(data.session);
+      } catch (error) {
+        console.warn("Unexpected auth bootstrap error; falling back to signed-out state.", error);
+        setSession(null);
+      } finally {
+        setIsReady(true);
+      }
+    };
+
+    void bootstrapSession();
 
     const {
       data: { subscription }

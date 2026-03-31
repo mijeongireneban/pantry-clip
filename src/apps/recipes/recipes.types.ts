@@ -11,11 +11,13 @@ import {
   summarizeJobStatusSchema,
   summarizeRecipeSchema,
   summarySourceSchema,
+  uiLanguageSchema,
   updateRecipeSchema
 } from "@/src/apps/recipes/recipes.schemas";
 
 export type SourceType = z.infer<typeof sourceTypeSchema>;
 export type SummarySource = z.infer<typeof summarySourceSchema>;
+export type UiLanguage = z.infer<typeof uiLanguageSchema>;
 
 export type CreateRecipeInput = z.infer<typeof createRecipeSchema>;
 export type SaveRecipeUrlInput = z.infer<typeof saveRecipeUrlSchema>;

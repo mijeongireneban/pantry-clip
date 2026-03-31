@@ -34,6 +34,7 @@ export type SummarizeRecipeRequest = {
 export type SaveRecipeUrlRequest = {
   sourceUrl: string;
   title?: string;
+  language?: "ko" | "en";
 };
 
 export type SummarizeJobStatus =
