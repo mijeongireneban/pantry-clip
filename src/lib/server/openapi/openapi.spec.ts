@@ -5,6 +5,8 @@ import {
   createRecipeSchema,
   listRecipesQuerySchema,
   sourceTypeSchema,
+  summarizeJobHandleSchema,
+  summarizeJobResultSchema,
   summarizeRecipeSchema,
   summarySourceSchema,
   updateRecipeSchema
@@ -58,15 +60,11 @@ const recipeSchema = registry.register(
 
 const summarizeRecipeRequestSchema = summarizeRecipeSchema.openapi("SummarizeRecipeRequest");
 
-const summarizeRecipeResponseSchema = registry.register(
-  "SummarizeRecipeResponse",
-  z.object({
-    sourceType: sourceTypeOpenApiSchema,
-    titleDraft: z.string(),
-    ingredientsDraft: z.string(),
-    stepsDraft: z.string(),
-    confidence: z.number().min(0).max(1).optional()
-  })
+const summarizeJobHandleOpenApiSchema = summarizeJobHandleSchema.openapi(
+  "SummarizeJobHandleResponse"
+);
+const summarizeJobResultOpenApiSchema = summarizeJobResultSchema.openapi(
+  "SummarizeJobResultResponse"
 );
 
 const createRecipeRequestSchema = createRecipeSchema.openapi("CreateRecipeRequest");
@@ -147,7 +145,7 @@ registry.registerPath({
   method: "post",
   path: "/api/recipes/summarize",
   tags: ["Recipes"],
-  summary: "Generate an AI recipe draft from source URL",
+  summary: "Create an async AI recipe draft job from source URL",
   request: {
     body: {
       required: true,
@@ -159,11 +157,11 @@ registry.registerPath({
     }
   },
   responses: {
-    200: {
-      description: "Draft generated",
+    202: {
+      description: "Summarize job created",
       content: {
         "application/json": {
-          schema: summarizeRecipeResponseSchema
+          schema: summarizeJobHandleOpenApiSchema
         }
       }
     },
@@ -177,6 +175,50 @@ registry.registerPath({
     },
     401: {
       description: "Unauthorized",
+      content: {
+        "application/json": {
+          schema: errorResponseSchema
+        }
+      }
+    }
+  }
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/recipes/summarize/{jobId}",
+  tags: ["Recipes"],
+  summary: "Get summarize job status",
+  request: {
+    params: z.object({
+      jobId: z.string().uuid().openapi({
+        param: {
+          name: "jobId",
+          in: "path"
+        },
+        example: "11111111-1111-1111-1111-111111111111"
+      })
+    })
+  },
+  responses: {
+    200: {
+      description: "Summarize job status",
+      content: {
+        "application/json": {
+          schema: summarizeJobResultOpenApiSchema
+        }
+      }
+    },
+    401: {
+      description: "Unauthorized",
+      content: {
+        "application/json": {
+          schema: errorResponseSchema
+        }
+      }
+    },
+    404: {
+      description: "Summarize job not found",
       content: {
         "application/json": {
           schema: errorResponseSchema

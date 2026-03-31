@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import type { RecipeDto } from "@/src/apis/@types/recipes";
+import type { RecipeDto, SummarizeJobStatus } from "@/src/apis/@types/recipes";
 import {
   createRecipe as createRecipeRequest,
+  createSummarizeJob as createSummarizeJobRequest,
   deleteRecipe as deleteRecipeRequest,
+  getSummarizeJob as getSummarizeJobRequest,
   listRecipes as listRecipesRequest,
-  summarizeRecipe as summarizeRecipeRequest,
   toggleSaveRecipe as toggleSaveRecipeRequest,
   updateRecipe as updateRecipeRequest
 } from "@/src/apis/recipes";
@@ -73,6 +74,17 @@ function validateDraft(d: RecipeDraft) {
 
 function toUpdatedAtLabel(updatedAt: string) {
   return new Date(updatedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function toSummarizeStatusLabel(status: SummarizeJobStatus | null) {
+  if (status === "queued") return "Queueing...";
+  if (status === "extracting") return "Extracting...";
+  if (status === "summarizing") return "Generating...";
+  return "Generating...";
 }
 
 function toRecipe(dto: RecipeDto): Recipe {
@@ -443,14 +455,15 @@ export function RecipesHomeContainer() {
   const [urlError, setUrlError]               = useState("");
   const [recipesError, setRecipesError]       = useState("");
   const [isGenerating, setIsGenerating]       = useState(false);
+  const [summarizeJobStatus, setSummarizeJobStatus] = useState<SummarizeJobStatus | null>(null);
   const [draftErrors, setDraftErrors]         = useState<Partial<Record<keyof RecipeDraft, string>>>({});
   const [toastMessage, setToastMessage]       = useState("");
   const [draft, setDraft]                     = useState<RecipeDraft>({
     sourceUrl: "", sourceType: "other", title: "", ingredientsText: "", stepsText: "", summarySource: "ai"
   });
 
-  // Draft is "ready to review" when title is populated (AI finished or manual write)
-  const hasDraft = draft.title.trim() !== "";
+  // Show the inline editor as soon as we have a source URL, even if AI generation failed.
+  const hasDraft = draft.sourceUrl.trim() !== "";
 
   const selectedRecipe = useMemo(() => recipes.find((r) => r.id === selectedRecipeId) ?? null, [recipes, selectedRecipeId]);
   const filteredRecipes = useMemo(() => {
@@ -497,6 +510,19 @@ export function RecipesHomeContainer() {
     setDraftErrors({});
     setAddUrl("");
     setUrlError("");
+    setSummarizeJobStatus(null);
+  };
+
+  const openManualDraft = (sourceUrl: string) => {
+    setDraft({
+      sourceUrl,
+      sourceType: inferSourceType(sourceUrl),
+      title: "",
+      ingredientsText: "",
+      stepsText: "",
+      summarySource: "manual"
+    });
+    setDraftErrors({});
   };
 
   const handleAuthSubmit = async () => {
@@ -519,15 +545,57 @@ export function RecipesHomeContainer() {
     const sourceUrl = addUrl.trim();
     if (!sourceUrl) { setUrlError("URL을 입력해주세요."); return; }
     if (!/^https?:\/\//i.test(sourceUrl)) { setUrlError("http:// 또는 https://로 시작하는 URL을 입력해주세요."); return; }
-    setUrlError(""); setIsGenerating(true);
+    setUrlError(""); setIsGenerating(true); setSummarizeJobStatus("queued");
     try {
-      const res = await summarizeRecipeRequest({ sourceUrl });
-      setDraft({ sourceUrl, sourceType: res.sourceType, title: res.titleDraft, ingredientsText: res.ingredientsDraft, stepsText: res.stepsDraft, summarySource: "ai" });
-      setDraftErrors({});
-      // Stay on "add" — draft section appears inline below
+      const handle = await createSummarizeJobRequest({ sourceUrl });
+      let nextStatus = handle.status;
+      let polls = 0;
+
+      while (polls < 15) {
+        await sleep(polls < 10 ? 2000 : 4000);
+
+        const job = await getSummarizeJobRequest(handle.jobId);
+        nextStatus = job.status;
+        setSummarizeJobStatus(job.status);
+
+        if (job.status === "completed" && job.draft) {
+          setDraft({
+            sourceUrl,
+            sourceType: job.sourceType,
+            title: job.draft.titleDraft,
+            ingredientsText: job.draft.ingredientsDraft,
+            stepsText: job.draft.stepsDraft,
+            summarySource: "ai"
+          });
+          setDraftErrors({});
+          return;
+        }
+
+        if (job.status === "insufficient_context") {
+          setUrlError(job.error?.message ?? "영상에서 레시피 정보를 충분히 추출하지 못했습니다. 직접 입력으로 계속해주세요.");
+          openManualDraft(sourceUrl);
+          return;
+        }
+
+        if (job.status === "failed") {
+          setUrlError(job.error?.message ?? "AI 초안 생성에 실패했습니다. 직접 입력으로 계속해주세요.");
+          openManualDraft(sourceUrl);
+          return;
+        }
+
+        polls += 1;
+      }
+
+      setUrlError(
+        nextStatus === "queued" || nextStatus === "extracting" || nextStatus === "summarizing"
+          ? "초안 생성이 지연되고 있습니다. 직접 입력으로 계속해주세요."
+          : "AI 초안 생성에 실패했습니다."
+      );
+      openManualDraft(sourceUrl);
     } catch (err) {
       setUrlError(err instanceof Error ? err.message : "AI 초안 생성에 실패했습니다.");
-    } finally { setIsGenerating(false); }
+      openManualDraft(sourceUrl);
+    } finally { setIsGenerating(false); setSummarizeJobStatus(null); }
   };
 
   // Save AI draft directly from inline review card
@@ -905,7 +973,7 @@ export function RecipesHomeContainer() {
                     disabled={isGenerating}
                   >
                     <IcBolt className="h-[18px] w-[18px]" />
-                    {isGenerating ? "Generating..." : "Generate with AI"}
+                    {isGenerating ? toSummarizeStatusLabel(summarizeJobStatus) : "Generate with AI"}
                   </Button>
 
                   {/* Skeleton loading state */}

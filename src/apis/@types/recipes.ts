@@ -2,7 +2,12 @@ export type SourceType = "youtube_shorts" | "instagram_reels" | "other";
 export type SummarySource = "manual" | "ai";
 
 export type ApiErrorResponse = {
-  code: "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "VALIDATION_ERROR" | "INTERNAL_ERROR";
+  code:
+    | "UNAUTHORIZED"
+    | "FORBIDDEN"
+    | "NOT_FOUND"
+    | "VALIDATION_ERROR"
+    | "INTERNAL_ERROR";
   message: string;
   details?: unknown;
 };
@@ -26,12 +31,36 @@ export type SummarizeRecipeRequest = {
   sourceUrl: string;
 };
 
-export type SummarizeRecipeResponse = {
-  sourceType: SourceType;
+export type SummarizeJobStatus =
+  | "queued"
+  | "extracting"
+  | "summarizing"
+  | "completed"
+  | "insufficient_context"
+  | "failed";
+
+export type SummarizeDraftDto = {
   titleDraft: string;
   ingredientsDraft: string;
   stepsDraft: string;
-  confidence?: number;
+};
+
+export type SummarizeJobHandleResponse = {
+  jobId: string;
+  status: SummarizeJobStatus;
+};
+
+export type SummarizeJobResultResponse = {
+  jobId: string;
+  status: SummarizeJobStatus;
+  sourceUrl: string;
+  sourceType: SourceType;
+  confidence: number | null;
+  draft: SummarizeDraftDto | null;
+  error: {
+    code: string;
+    message: string;
+  } | null;
 };
 
 export type CreateRecipeRequest = {

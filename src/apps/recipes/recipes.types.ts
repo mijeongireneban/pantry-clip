@@ -4,6 +4,10 @@ import {
   createRecipeSchema,
   listRecipesQuerySchema,
   sourceTypeSchema,
+  summarizeDraftResultSchema,
+  summarizeJobHandleSchema,
+  summarizeJobResultSchema,
+  summarizeJobStatusSchema,
   summarizeRecipeSchema,
   summarySourceSchema,
   updateRecipeSchema
@@ -15,6 +19,10 @@ export type SummarySource = z.infer<typeof summarySourceSchema>;
 export type CreateRecipeInput = z.infer<typeof createRecipeSchema>;
 export type UpdateRecipeInput = z.infer<typeof updateRecipeSchema>;
 export type SummarizeRecipeInput = z.infer<typeof summarizeRecipeSchema>;
+export type SummarizeJobStatus = z.infer<typeof summarizeJobStatusSchema>;
+export type SummarizeJobHandle = z.infer<typeof summarizeJobHandleSchema>;
+export type SummarizeDraftResult = z.infer<typeof summarizeDraftResultSchema>;
+export type SummarizeJobResult = z.infer<typeof summarizeJobResultSchema>;
 export type ListRecipesQuery = z.infer<typeof listRecipesQuerySchema>;
 export type SummarizedRecipeDraft = {
   sourceType: SourceType;
