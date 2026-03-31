@@ -1,5 +1,6 @@
 import "@/src/styles/globals.css";
 
+import { Analytics } from "@vercel/analytics/next";
 import type { Metadata } from "next";
 import { Merriweather, Outfit } from "next/font/google";
 import localFont from "next/font/local";
@@ -36,6 +37,7 @@ export default function RootLayout({
     <html lang="ko" className={`dark ${outfit.variable} ${merriweather.variable} ${googleSansMono.variable}`}>
       <body>
         <AppProvider>{children}</AppProvider>
+        <Analytics />
       </body>
     </html>
   );
