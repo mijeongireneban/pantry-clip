@@ -1,5 +1,20 @@
 import { z } from "zod";
 
+export function isYouTubeShortsUrl(sourceUrl: string): boolean {
+  try {
+    const parsed = new URL(sourceUrl);
+    const hostname = parsed.hostname.toLowerCase();
+    const isYouTubeHost =
+      hostname === "youtube.com" ||
+      hostname === "www.youtube.com" ||
+      hostname === "m.youtube.com";
+
+    return isYouTubeHost && /^\/shorts\/[^/?#]+\/?$/.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
 export const sourceTypeSchema = z.enum([
   "youtube_shorts",
   "instagram_reels",

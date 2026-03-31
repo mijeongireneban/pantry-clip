@@ -51,7 +51,7 @@ export async function saveRecipeFromUrl(
 ) {
   const sourceUrl = input.sourceUrl.trim();
   const sourceType = inferSourceType(sourceUrl);
-  const language = input.language ?? "ko";
+  const language = input.language ?? "en";
   const extracted = await extractRecipeContext(
     { sourceUrl },
     { enableAudioTranscription: false }

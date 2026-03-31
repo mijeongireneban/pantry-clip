@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { summarizeRecipeSchema } from "@/src/apps/recipes/recipes.schemas";
+import {
+  isYouTubeShortsUrl,
+  summarizeRecipeSchema
+} from "@/src/apps/recipes/recipes.schemas";
 import { requireUserId } from "@/src/lib/auth/require-user-id";
 import {
   createSummarizeJob,
@@ -14,6 +17,15 @@ export async function POST(request: NextRequest) {
     const userId = await requireUserId();
     const json = await request.json();
     const input = summarizeRecipeSchema.parse(json);
+
+    if (!isYouTubeShortsUrl(input.sourceUrl)) {
+      throw new ApiError(
+        "VALIDATION_ERROR",
+        "AI draft generation currently works only with YouTube Shorts links.",
+        400
+      );
+    }
+
     const job = await createSummarizeJob(userId, input);
 
     try {
