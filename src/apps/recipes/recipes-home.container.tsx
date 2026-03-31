@@ -157,6 +157,37 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function matchesRecipeSearchQuery(
+  recipe: Pick<Recipe, "title">,
+  query: string
+) {
+  const needle = query.trim().toLowerCase();
+
+  return needle === "" || recipe.title.toLowerCase().includes(needle);
+}
+
+function upsertRecipeInList(recipes: Recipe[], nextRecipe: Recipe) {
+  const existingIndex = recipes.findIndex(
+    (recipe) => recipe.id === nextRecipe.id
+  );
+
+  if (existingIndex === -1) {
+    return [nextRecipe, ...recipes];
+  }
+
+  return recipes.map((recipe) =>
+    recipe.id === nextRecipe.id ? nextRecipe : recipe
+  );
+}
+
+function removeRecipeFromList(recipes: Recipe[], recipeId: string) {
+  return recipes.filter((recipe) => recipe.id !== recipeId);
+}
+
 function toSummarizeStatusLabel(
   status: SummarizeJobStatus | null,
   language: Language
@@ -218,6 +249,7 @@ const copy = {
       searchPlaceholder: "레시피 검색...",
       loadError: "레시피를 불러오지 못했습니다.",
       recentRecipes: "최근 레시피",
+      searchResults: "검색 결과",
       noRecipes: "아직 레시피가 없어요",
       noRecipesDescription: "링크를 붙여넣어 첫 번째 레시피를 추가해보세요.",
       noMatches: "검색 결과가 없어요",
@@ -378,6 +410,7 @@ const copy = {
       searchPlaceholder: "Search recipes...",
       loadError: "Failed to load recipes.",
       recentRecipes: "Recent Recipes",
+      searchResults: "Search Results",
       noRecipes: "No recipes yet",
       noRecipesDescription: "Paste a link to add your first recipe.",
       noMatches: "No matches",
@@ -1141,14 +1174,19 @@ function RecipeCardSkeleton({
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export function RecipesHomeContainer() {
+  const RECIPES_PAGE_SIZE = 20;
+  const SEARCH_DEBOUNCE_MS = 250;
   const { isReady, session, signInWithPassword, signOut, signUpWithPassword } =
     useAuth();
   const { theme, setTheme } = useTheme();
   const [language, setLanguage] = useState<Language>("en");
   const [screen, setScreen] = useState<Screen>("auth");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [searchResults, setSearchResults] = useState<Recipe[] | null>(null);
   const [isRecipesLoading, setIsRecipesLoading] = useState(false);
+  const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [selectedRecipeId, setSelectedRecipeId] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [authEmail, setAuthEmail] = useState("");
@@ -1180,19 +1218,66 @@ export function RecipesHomeContainer() {
 
   // Show the inline editor as soon as we have a source URL, even if AI generation failed.
   const hasDraft = draft.sourceUrl.trim() !== "";
+  const normalizedSearchQuery = searchQuery.trim();
+  const isSearchActive = normalizedSearchQuery.length > 0;
 
-  const selectedRecipe = useMemo(
-    () => recipes.find((r) => r.id === selectedRecipeId) ?? null,
-    [recipes, selectedRecipeId]
-  );
   const ui = copy[language];
-  const isInitialRecipesLoading = isRecipesLoading && recipes.length === 0;
-  const filteredRecipes = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return q
-      ? recipes.filter((r) => r.title.toLowerCase().includes(q))
-      : recipes;
-  }, [recipes, searchQuery]);
+  const libraryRecipes = useMemo(
+    () => (isSearchActive ? (searchResults ?? []) : recipes),
+    [isSearchActive, recipes, searchResults]
+  );
+  const selectedRecipe = useMemo(
+    () =>
+      searchResults?.find((recipe) => recipe.id === selectedRecipeId) ??
+      recipes.find((recipe) => recipe.id === selectedRecipeId) ??
+      null,
+    [recipes, searchResults, selectedRecipeId]
+  );
+  const isInitialRecipesLoading =
+    !isSearchActive && isRecipesLoading && recipes.length === 0;
+  const isLibrarySearchLoading =
+    isSearchActive && (isSearchLoading || searchResults === null);
+
+  const upsertRecipeCollections = (
+    nextRecipe: Recipe,
+    options?: {
+      insertIntoBase?: boolean;
+    }
+  ) => {
+    setRecipes((currentRecipes) => {
+      const recipeExists = currentRecipes.some(
+        (recipe) => recipe.id === nextRecipe.id
+      );
+
+      if (!recipeExists && !options?.insertIntoBase) {
+        return currentRecipes;
+      }
+
+      return upsertRecipeInList(currentRecipes, nextRecipe);
+    });
+    setSearchResults((currentSearchResults) => {
+      if (currentSearchResults === null) {
+        return currentSearchResults;
+      }
+
+      if (!matchesRecipeSearchQuery(nextRecipe, debouncedSearchQuery)) {
+        return removeRecipeFromList(currentSearchResults, nextRecipe.id);
+      }
+
+      return upsertRecipeInList(currentSearchResults, nextRecipe);
+    });
+  };
+
+  const removeRecipeCollections = (recipeId: string) => {
+    setRecipes((currentRecipes) =>
+      removeRecipeFromList(currentRecipes, recipeId)
+    );
+    setSearchResults((currentSearchResults) =>
+      currentSearchResults === null
+        ? currentSearchResults
+        : removeRecipeFromList(currentSearchResults, recipeId)
+    );
+  };
 
   const activeTab = useMemo<Tab>(() => {
     if (["list", "detail", "edit"].includes(screen)) return "library";
@@ -1219,6 +1304,14 @@ export function RecipesHomeContainer() {
   }, [language]);
 
   useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [SEARCH_DEBOUNCE_MS, searchQuery]);
+
+  useEffect(() => {
     if (!isReady) return;
     if (session) {
       setScreen((c) => (c === "auth" ? "list" : c));
@@ -1230,27 +1323,94 @@ export function RecipesHomeContainer() {
   useEffect(() => {
     if (!isReady || !session) {
       setRecipes([]);
+      setSearchResults(null);
       setSelectedRecipeId("");
       setIsRecipesLoading(false);
+      setIsSearchLoading(false);
       return;
     }
+    const controller = new AbortController();
     void (async () => {
       try {
         setIsRecipesLoading(true);
         setRecipesError("");
-        const res = await listRecipesRequest();
+        const res = await listRecipesRequest(
+          { limit: RECIPES_PAGE_SIZE },
+          { signal: controller.signal }
+        );
         const items = res.items.map(toRecipe);
+        if (controller.signal.aborted) {
+          return;
+        }
         setRecipes(items);
         setSelectedRecipeId((c) => c || items[0]?.id || "");
       } catch (err) {
+        if (isAbortError(err)) {
+          return;
+        }
         setRecipesError(
           err instanceof Error ? err.message : ui.library.loadError
         );
       } finally {
-        setIsRecipesLoading(false);
+        if (!controller.signal.aborted) {
+          setIsRecipesLoading(false);
+        }
       }
     })();
-  }, [isReady, session, ui.library.loadError]);
+
+    return () => controller.abort();
+  }, [RECIPES_PAGE_SIZE, isReady, session, ui.library.loadError]);
+
+  useEffect(() => {
+    if (!isReady || !session) {
+      return;
+    }
+
+    if (!debouncedSearchQuery) {
+      setSearchResults(null);
+      setIsSearchLoading(false);
+      setRecipesError("");
+      return;
+    }
+
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        setIsSearchLoading(true);
+        setRecipesError("");
+        setSearchResults(null);
+        const res = await listRecipesRequest(
+          { q: debouncedSearchQuery, limit: RECIPES_PAGE_SIZE },
+          { signal: controller.signal }
+        );
+        if (controller.signal.aborted) {
+          return;
+        }
+        setSearchResults(res.items.map(toRecipe));
+      } catch (err) {
+        if (isAbortError(err)) {
+          return;
+        }
+        setSearchResults([]);
+        setRecipesError(
+          err instanceof Error ? err.message : ui.library.loadError
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSearchLoading(false);
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, [
+    RECIPES_PAGE_SIZE,
+    debouncedSearchQuery,
+    isReady,
+    session,
+    ui.library.loadError
+  ]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -1404,7 +1564,7 @@ export function RecipesHomeContainer() {
         language
       });
       const next = toRecipe(created);
-      setRecipes((c) => [next, ...c]);
+      upsertRecipeCollections(next, { insertIntoBase: true });
       setSelectedRecipeId(next.id);
       resetDraft();
       setScreen("detail");
@@ -1433,7 +1593,7 @@ export function RecipesHomeContainer() {
         summarySource: draft.summarySource
       });
       const next = toRecipe(created);
-      setRecipes((c) => [next, ...c]);
+      upsertRecipeCollections(next, { insertIntoBase: true });
       setSelectedRecipeId(next.id);
       resetDraft();
       setScreen("detail");
@@ -1461,7 +1621,7 @@ export function RecipesHomeContainer() {
         summarySource: draft.summarySource
       });
       const next = toRecipe(created);
-      setRecipes((c) => [next, ...c]);
+      upsertRecipeCollections(next, { insertIntoBase: true });
       setSelectedRecipeId(next.id);
       resetDraft();
       setScreen("detail");
@@ -1488,7 +1648,7 @@ export function RecipesHomeContainer() {
         summarySource: draft.summarySource
       });
       const next = toRecipe(updated);
-      setRecipes((c) => c.map((r) => (r.id === selectedRecipe.id ? next : r)));
+      upsertRecipeCollections(next);
       setSelectedRecipeId(next.id);
       setScreen("detail");
       showToast(ui.edit.success);
@@ -1503,23 +1663,16 @@ export function RecipesHomeContainer() {
   const handleToggleSave = async () => {
     if (!selectedRecipe) return;
     const next = !selectedRecipe.isSaved;
+    const optimisticRecipe = { ...selectedRecipe, isSaved: next };
     // Optimistic update
-    setRecipes((c) =>
-      c.map((r) => (r.id === selectedRecipe.id ? { ...r, isSaved: next } : r))
-    );
+    upsertRecipeCollections(optimisticRecipe);
     try {
       const updated = await toggleSaveRecipeRequest(selectedRecipe.id, next);
-      setRecipes((c) =>
-        c.map((r) => (r.id === selectedRecipe.id ? toRecipe(updated) : r))
-      );
+      upsertRecipeCollections(toRecipe(updated));
       showToast(next ? ui.actions.savedOn : ui.actions.unsaved);
     } catch {
       // Rollback
-      setRecipes((c) =>
-        c.map((r) =>
-          r.id === selectedRecipe.id ? { ...r, isSaved: !next } : r
-        )
-      );
+      upsertRecipeCollections(selectedRecipe);
     }
   };
 
@@ -1541,8 +1694,8 @@ export function RecipesHomeContainer() {
     if (!selectedRecipe) return;
     try {
       await deleteRecipeRequest(selectedRecipe.id);
-      const remaining = recipes.filter((r) => r.id !== selectedRecipe.id);
-      setRecipes(remaining);
+      const remaining = removeRecipeFromList(recipes, selectedRecipe.id);
+      removeRecipeCollections(selectedRecipe.id);
       setSelectedRecipeId(remaining[0]?.id ?? "");
       setShowDeleteModal(false);
       setScreen("list");
@@ -1756,19 +1909,22 @@ export function RecipesHomeContainer() {
                 {/* Recent Recipes header */}
                 <div className="mt-6 flex items-center justify-between">
                   <h2 className="text-[17px] font-bold">
-                    {ui.library.recentRecipes}
+                    {isSearchActive
+                      ? ui.library.searchResults
+                      : ui.library.recentRecipes}
                   </h2>
                   {/* TODO: View All */}
                 </div>
 
                 {/* Empty states */}
-                {isInitialRecipesLoading && (
+                {(isInitialRecipesLoading || isLibrarySearchLoading) && (
                   <div className="mt-4 space-y-4">
                     <RecipeCardSkeleton showBookmark />
                     <RecipeCardSkeleton showBookmark />
                   </div>
                 )}
-                {recipes.length === 0 &&
+                {!isSearchActive &&
+                  recipes.length === 0 &&
                   !recipesError &&
                   !isInitialRecipesLoading && (
                     <div className="mt-4 rounded-2xl border border-border/70 bg-card p-6 text-center">
@@ -1778,9 +1934,10 @@ export function RecipesHomeContainer() {
                       </p>
                     </div>
                   )}
-                {recipes.length > 0 &&
-                  filteredRecipes.length === 0 &&
-                  !isInitialRecipesLoading && (
+                {isSearchActive &&
+                  libraryRecipes.length === 0 &&
+                  !recipesError &&
+                  !isLibrarySearchLoading && (
                     <div className="mt-4 rounded-2xl border border-border/70 bg-card p-6 text-center">
                       <p className="font-semibold">{ui.library.noMatches}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -1791,9 +1948,9 @@ export function RecipesHomeContainer() {
 
                 {/* Recipe cards */}
                 <div
-                  className={`mt-4 space-y-4 ${isInitialRecipesLoading ? "hidden" : ""}`}
+                  className={`mt-4 space-y-4 ${isInitialRecipesLoading || isLibrarySearchLoading ? "hidden" : ""}`}
                 >
-                  {filteredRecipes.map((recipe) => (
+                  {libraryRecipes.map((recipe) => (
                     <button
                       key={recipe.id}
                       type="button"

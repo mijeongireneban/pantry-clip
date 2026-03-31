@@ -23,9 +23,10 @@ async function toErrorMessage(response: Response, fallbackMessage: string) {
 
 function toQueryString(query: ListRecipesRequest) {
   const params = new URLSearchParams();
+  const trimmedQuery = query.q?.trim();
 
-  if (query.q) {
-    params.set("q", query.q);
+  if (trimmedQuery) {
+    params.set("q", trimmedQuery);
   }
 
   if (query.limit) {
@@ -48,7 +49,9 @@ export async function createSummarizeJob(payload: SummarizeRecipeRequest) {
   });
 
   if (!response.ok) {
-    throw new Error(await toErrorMessage(response, "Failed to summarize recipe."));
+    throw new Error(
+      await toErrorMessage(response, "Failed to summarize recipe.")
+    );
   }
 
   return (await response.json()) as SummarizeJobHandleResponse;
@@ -58,7 +61,9 @@ export async function getSummarizeJob(jobId: string) {
   const response = await fetch(`/api/recipes/summarize/${jobId}`);
 
   if (!response.ok) {
-    throw new Error(await toErrorMessage(response, "Failed to load summarize job."));
+    throw new Error(
+      await toErrorMessage(response, "Failed to load summarize job.")
+    );
   }
 
   return (await response.json()) as SummarizeJobResultResponse;
@@ -72,7 +77,9 @@ export async function saveRecipeUrl(payload: SaveRecipeUrlRequest) {
   });
 
   if (!response.ok) {
-    throw new Error(await toErrorMessage(response, "Failed to save recipe URL."));
+    throw new Error(
+      await toErrorMessage(response, "Failed to save recipe URL.")
+    );
   }
 
   return (await response.json()) as RecipeDto;
@@ -92,8 +99,15 @@ export async function createRecipe(payload: CreateRecipeRequest) {
   return (await response.json()) as RecipeDto;
 }
 
-export async function listRecipes(query: ListRecipesRequest = {}) {
-  const response = await fetch(`/api/recipes${toQueryString(query)}`);
+export async function listRecipes(
+  query: ListRecipesRequest = {},
+  options?: {
+    signal?: AbortSignal;
+  }
+) {
+  const response = await fetch(`/api/recipes${toQueryString(query)}`, {
+    signal: options?.signal
+  });
 
   if (!response.ok) {
     throw new Error(await toErrorMessage(response, "Failed to load recipes."));

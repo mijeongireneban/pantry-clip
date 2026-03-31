@@ -23,14 +23,9 @@ This list was validated against the current implementation before being added he
   - Completed: Library and Saved now show recipe-card skeletons during the initial recipes fetch instead of flashing empty-state copy.
   - Relevant file: `src/apps/recipes/recipes-home.container.tsx`
 
-- [ ] Finish search bar functionality end-to-end.
-  - Validation: search is partially implemented.
-  - Current behavior:
-    - the Library search input filters the already-loaded in-memory list by title
-    - the backend already supports `q` via `GET /api/recipes`
-    - the current screen load does not call the API with `q`
-  - Recommendation: decide whether search should stay client-side for small lists or be wired to the API for scalable, persistent search behavior.
-  - Relevant files: `src/apps/recipes/recipes-home.container.tsx`, `src/app/api/recipes/route.ts`, `src/lib/server/recipes/recipes.repository.ts`, `src/apis/recipes.ts`
+- [x] Finish search bar functionality end-to-end.
+  - Completed: Library search now debounces input and calls `GET /api/recipes?q=...`, while the app keeps recent-recipes state separate so Saved/Profile flows do not get accidentally filtered.
+  - Relevant files: `src/apps/recipes/recipes-home.container.tsx`, `src/apis/recipes.ts`
 
 - [ ] Make "Recipe Tip of the Day" functional.
   - Validation: this section is currently static copy with a CTA button that has no action.
@@ -60,5 +55,5 @@ This list was validated against the current implementation before being added he
 
 ## Summary
 
-- Remaining: Saved directories, search completion, functional tip CTA, theme toggle, name/avatar support
-- Completed in this pass: English default, library saved-state icon, initial loading skeletons, Add-view settings cleanup, stricter Shorts validation
+- Remaining: Saved directories, functional tip CTA, name/avatar support
+- Completed in this pass: English default, library saved-state icon, initial loading skeletons, search completion, Add-view settings cleanup, theme toggle, stricter Shorts validation
