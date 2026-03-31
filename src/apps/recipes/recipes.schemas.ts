@@ -7,6 +7,7 @@ export const sourceTypeSchema = z.enum([
 ]);
 
 export const summarySourceSchema = z.enum(["manual", "ai"]);
+export const uiLanguageSchema = z.enum(["ko", "en"]);
 
 export const summarizeJobStatusSchema = z.enum([
   "queued",
@@ -29,7 +30,8 @@ export const createRecipeSchema = z.object({
 
 export const saveRecipeUrlSchema = z.object({
   sourceUrl: z.string().url(),
-  title: z.string().trim().max(140).optional()
+  title: z.string().trim().max(140).optional(),
+  language: uiLanguageSchema.optional()
 });
 
 export const summarizeRecipeSchema = z.object({

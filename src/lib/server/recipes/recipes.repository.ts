@@ -87,6 +87,7 @@ export async function listRecipes(userId: string, query: ListRecipesQuery): Prom
   const cursor = query.cursor ? decodeRecipesCursor(query.cursor) : null;
   const where: Prisma.RecipeWhereInput = {
     userId,
+    deletedAt: null,
     ...(needle
       ? {
           title: {
@@ -133,7 +134,8 @@ export async function getRecipeById(userId: string, id: string): Promise<Recipe 
   const recipe = await prisma.recipe.findFirst({
     where: {
       id,
-      userId
+      userId,
+      deletedAt: null
     }
   });
 
@@ -148,7 +150,8 @@ export async function updateRecipe(
   const current = await prisma.recipe.findFirst({
     where: {
       id,
-      userId
+      userId,
+      deletedAt: null
     }
   });
 
@@ -175,10 +178,15 @@ export async function updateRecipe(
 }
 
 export async function deleteRecipe(userId: string, id: string): Promise<boolean> {
-  const deleted = await prisma.recipe.deleteMany({
+  const deleted = await prisma.recipe.updateMany({
     where: {
       id,
-      userId
+      userId,
+      deletedAt: null
+    },
+    data: {
+      deletedAt: new Date(),
+      updatedAt: new Date()
     }
   });
 

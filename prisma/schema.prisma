@@ -85,6 +85,7 @@ model Recipe {
   isSaved         Boolean       @default(false) @map("is_saved")
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz(6)
   user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt(sort: Desc), id(sort: Desc)], map: "idx_recipes_user_created_id_desc")
