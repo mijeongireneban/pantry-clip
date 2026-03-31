@@ -22,12 +22,24 @@ enum SummarySource {
   @@map("summary_source")
 }
 
+enum SummarizeJobStatus {
+  queued
+  extracting
+  summarizing
+  completed
+  insufficient_context
+  failed
+
+  @@map("summarize_job_status")
+}
+
 model User {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email     String   @unique
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
-  recipes   Recipe[]
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email         String         @unique
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime       @default(now()) @map("updated_at") @db.Timestamptz(6)
+  recipes       Recipe[]
+  summarizeJobs SummarizeJob[]
 
   @@map("users")
 }
@@ -50,4 +62,29 @@ model Recipe {
   @@index([userId, createdAt(sort: Desc), id(sort: Desc)], map: "idx_recipes_user_created_id_desc")
   @@index([userId, title], map: "idx_recipes_user_title")
   @@map("recipes")
+}
+
+model SummarizeJob {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String             @map("user_id") @db.Uuid
+  sourceUrl        String             @map("source_url")
+  sourceType       SourceType         @map("source_type")
+  status           SummarizeJobStatus
+  canonicalVideoId String?            @map("canonical_video_id")
+  titleHint        String?            @map("title_hint")
+  descriptionHint  String?            @map("description_hint")
+  subtitleText     String?            @map("subtitle_text")
+  transcriptText   String?            @map("transcript_text")
+  evidenceSources  Json?              @map("evidence_sources")
+  confidence       Float?             @map("confidence")
+  draftPayload     Json?              @map("draft_payload")
+  errorCode        String?            @map("error_code")
+  errorMessage     String?            @map("error_message")
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime           @default(now()) @map("updated_at") @db.Timestamptz(6)
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)], map: "idx_summarize_jobs_user_created_id_desc")
+  @@index([userId, status, createdAt(sort: Desc)], map: "idx_summarize_jobs_user_status_created_desc")
+  @@map("summarize_jobs")
 }

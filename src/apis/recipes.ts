@@ -5,8 +5,9 @@ import type {
   ListRecipesRequest,
   ListRecipesResponse,
   RecipeDto,
+  SummarizeJobHandleResponse,
+  SummarizeJobResultResponse,
   SummarizeRecipeRequest,
-  SummarizeRecipeResponse,
   UpdateRecipeRequest
 } from "@/src/apis/@types/recipes";
 
@@ -38,7 +39,7 @@ function toQueryString(query: ListRecipesRequest) {
   return qs ? `?${qs}` : "";
 }
 
-export async function summarizeRecipe(payload: SummarizeRecipeRequest) {
+export async function createSummarizeJob(payload: SummarizeRecipeRequest) {
   const response = await fetch("/api/recipes/summarize", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -49,7 +50,17 @@ export async function summarizeRecipe(payload: SummarizeRecipeRequest) {
     throw new Error(await toErrorMessage(response, "Failed to summarize recipe."));
   }
 
-  return (await response.json()) as SummarizeRecipeResponse;
+  return (await response.json()) as SummarizeJobHandleResponse;
+}
+
+export async function getSummarizeJob(jobId: string) {
+  const response = await fetch(`/api/recipes/summarize/${jobId}`);
+
+  if (!response.ok) {
+    throw new Error(await toErrorMessage(response, "Failed to load summarize job."));
+  }
+
+  return (await response.json()) as SummarizeJobResultResponse;
 }
 
 export async function createRecipe(payload: CreateRecipeRequest) {
