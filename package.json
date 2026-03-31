@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.4",
+    "@distube/ytdl-core": "^4.16.12",
     "@prisma/client": "^6.5.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.49.4",

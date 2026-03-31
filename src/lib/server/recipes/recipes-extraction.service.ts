@@ -1,5 +1,9 @@
 import type { SourceType, SummarizeRecipeInput } from "@/src/apps/recipes/recipes.types";
 import { inferSourceType } from "@/src/lib/server/recipes/recipes.utils";
+import { transcribeRecipeAudio } from "@/src/lib/server/recipes/recipes-transcription.service";
+import { downloadYouTubeRecipeAudio } from "@/src/lib/server/recipes/recipes-youtube-audio.service";
+
+const MIN_RECIPE_NARRATIVE_LENGTH = 120;
 
 type YouTubeCaptionTrack = {
   baseUrl?: string;
@@ -24,9 +28,25 @@ export type ExtractedRecipeContext = {
   canonicalVideoId: string | null;
   title: string;
   description: string;
-  transcript: string;
+  subtitleText: string;
+  transcriptText: string;
   evidenceSources: string[];
 };
+
+function emptyRecipeContext(
+  sourceType: SourceType,
+  canonicalVideoId: string | null = null
+): ExtractedRecipeContext {
+  return {
+    sourceType,
+    canonicalVideoId,
+    title: "",
+    description: "",
+    subtitleText: "",
+    transcriptText: "",
+    evidenceSources: []
+  };
+}
 
 async function fetchText(url: string): Promise<string> {
   const controller = new AbortController();
@@ -196,18 +216,35 @@ async function fetchYouTubeTranscript(baseUrl: string | null): Promise<string> {
   }
 }
 
+async function maybeTranscribeYouTubeAudio(
+  context: Pick<ExtractedRecipeContext, "canonicalVideoId" | "title" | "description" | "subtitleText">
+): Promise<string> {
+  if (!context.canonicalVideoId || context.subtitleText.length >= MIN_RECIPE_NARRATIVE_LENGTH) {
+    return "";
+  }
+
+  const audio = await downloadYouTubeRecipeAudio(context.canonicalVideoId);
+
+  if (!audio) {
+    return "";
+  }
+
+  try {
+    return await transcribeRecipeAudio(audio, {
+      title: context.title,
+      description: context.description
+    });
+  } catch (error) {
+    console.error("Recipe audio transcription failed", error);
+    return "";
+  }
+}
+
 async function fetchYouTubeContext(sourceUrl: string): Promise<ExtractedRecipeContext> {
   const videoId = extractYouTubeVideoId(sourceUrl);
 
   if (!videoId) {
-    return {
-      sourceType: "youtube_shorts",
-      canonicalVideoId: null,
-      title: "",
-      description: "",
-      transcript: "",
-      evidenceSources: []
-    };
+    return emptyRecipeContext("youtube_shorts");
   }
 
   const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}&hl=ko`;
@@ -219,29 +256,47 @@ async function fetchYouTubeContext(sourceUrl: string): Promise<ExtractedRecipeCo
       "var ytInitialPlayerResponse = "
     ) as YouTubePlayerResponse | null;
     const videoDetails = playerResponse?.videoDetails;
-    const transcript = await fetchYouTubeTranscript(pickCaptionTrack(playerResponse));
-    const evidenceSources = ["youtube_metadata"];
+    const subtitleText = await fetchYouTubeTranscript(pickCaptionTrack(playerResponse));
+    const title = normalizeWhitespace(videoDetails?.title ?? "");
+    const description = normalizeWhitespace(videoDetails?.shortDescription ?? "");
+    const transcriptText = await maybeTranscribeYouTubeAudio({
+      canonicalVideoId: videoId,
+      title,
+      description,
+      subtitleText
+    });
+    const evidenceSources: string[] = [];
 
-    if (transcript) {
+    if (title || description) {
+      evidenceSources.push("youtube_metadata");
+    }
+
+    if (subtitleText) {
       evidenceSources.push("youtube_captions");
+    }
+
+    if (transcriptText) {
+      evidenceSources.push("openai_audio_transcription");
     }
 
     return {
       sourceType: "youtube_shorts",
       canonicalVideoId: videoId,
-      title: normalizeWhitespace(videoDetails?.title ?? ""),
-      description: normalizeWhitespace(videoDetails?.shortDescription ?? ""),
-      transcript,
+      title,
+      description,
+      subtitleText,
+      transcriptText,
       evidenceSources
     };
   } catch {
+    const transcriptText = await maybeTranscribeYouTubeAudio(
+      emptyRecipeContext("youtube_shorts", videoId)
+    );
+
     return {
-      sourceType: "youtube_shorts",
-      canonicalVideoId: videoId,
-      title: "",
-      description: "",
-      transcript: "",
-      evidenceSources: []
+      ...emptyRecipeContext("youtube_shorts", videoId),
+      transcriptText,
+      evidenceSources: transcriptText ? ["openai_audio_transcription"] : []
     };
   }
 }
@@ -254,7 +309,12 @@ export async function extractRecipeContext(
   if (sourceType === "youtube_shorts") {
     const youtubeContext = await fetchYouTubeContext(input.sourceUrl);
 
-    if (youtubeContext.title || youtubeContext.description || youtubeContext.transcript) {
+    if (
+      youtubeContext.title ||
+      youtubeContext.description ||
+      youtubeContext.subtitleText ||
+      youtubeContext.transcriptText
+    ) {
       return youtubeContext;
     }
   }
@@ -266,13 +326,17 @@ export async function extractRecipeContext(
     canonicalVideoId: null,
     title: meta.title,
     description: meta.description,
-    transcript: "",
+    subtitleText: "",
+    transcriptText: "",
     evidenceSources: meta.title || meta.description ? ["page_meta"] : []
   };
 }
 
 export function hasSufficientRecipeContext(context: ExtractedRecipeContext): boolean {
-  const transcriptScore = context.transcript.length >= 120;
+  const narrativeText = [context.subtitleText, context.transcriptText]
+    .filter(Boolean)
+    .join(" ");
+  const transcriptScore = narrativeText.length >= MIN_RECIPE_NARRATIVE_LENGTH;
   const metadataScore = `${context.title} ${context.description}`.trim().length >= 24;
 
   return transcriptScore || metadataScore;

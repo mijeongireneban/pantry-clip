@@ -10,12 +10,11 @@ import type {
   SummarizeJobHandle,
   SummarizeJobResult,
   SummarizeJobStatus,
-  SummarizeRecipeInput} from "@/src/apps/recipes/recipes.types";
+  SummarizeRecipeInput
+} from "@/src/apps/recipes/recipes.types";
 import { prisma } from "@/src/lib/server/prisma";
 import { inferSourceType } from "@/src/lib/server/recipes/recipes.utils";
-import type {
-  ExtractedRecipeContext
-} from "@/src/lib/server/recipes/recipes-extraction.service";
+import type { ExtractedRecipeContext } from "@/src/lib/server/recipes/recipes-extraction.service";
 
 type SummarizeJobRecord = {
   id: string;
@@ -142,8 +141,8 @@ export async function storeSummarizeJobEvidence(
       canonicalVideoId: context.canonicalVideoId,
       titleHint: context.title || null,
       descriptionHint: context.description || null,
-      subtitleText: context.transcript || null,
-      transcriptText: null,
+      subtitleText: context.subtitleText || null,
+      transcriptText: context.transcriptText || null,
       evidenceSources: context.evidenceSources as Prisma.InputJsonValue,
       updatedAt: new Date()
     }
@@ -172,8 +171,8 @@ export async function completeSummarizeJob(
       canonicalVideoId: context.canonicalVideoId,
       titleHint: context.title || null,
       descriptionHint: context.description || null,
-      subtitleText: context.transcript || null,
-      transcriptText: null,
+      subtitleText: context.subtitleText || null,
+      transcriptText: context.transcriptText || null,
       evidenceSources: context.evidenceSources as Prisma.InputJsonValue,
       confidence: draft.confidence ?? null,
       draftPayload: {
@@ -200,8 +199,8 @@ export async function markSummarizeJobInsufficientContext(
       canonicalVideoId: context.canonicalVideoId,
       titleHint: context.title || null,
       descriptionHint: context.description || null,
-      subtitleText: context.transcript || null,
-      transcriptText: null,
+      subtitleText: context.subtitleText || null,
+      transcriptText: context.transcriptText || null,
       evidenceSources: context.evidenceSources as Prisma.InputJsonValue,
       confidence: 0,
       draftPayload: Prisma.JsonNull,

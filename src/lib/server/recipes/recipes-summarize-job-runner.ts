@@ -1,4 +1,5 @@
 import {
+  type ExtractedRecipeContext,
   extractRecipeContext,
   hasSufficientRecipeContext
 } from "@/src/lib/server/recipes/recipes-extraction.service";
@@ -22,9 +23,10 @@ export async function runSummarizeJob(jobId: string): Promise<void> {
   }
 
   await markSummarizeJobExtracting(jobId);
+  let context: ExtractedRecipeContext | null = null;
 
   try {
-    const context = await extractRecipeContext({ sourceUrl: job.sourceUrl });
+    context = await extractRecipeContext({ sourceUrl: job.sourceUrl });
 
     await storeSummarizeJobEvidence(jobId, context);
 
@@ -42,9 +44,7 @@ export async function runSummarizeJob(jobId: string): Promise<void> {
     const draft = await summarizeRecipeFromContext(job.sourceUrl, context);
     await completeSummarizeJob(jobId, context, draft);
   } catch (error) {
-    if (error instanceof ApiError && error.status === 400) {
-      const context = await extractRecipeContext({ sourceUrl: job.sourceUrl });
-
+    if (error instanceof ApiError && error.status === 400 && context) {
       await markSummarizeJobInsufficientContext(
         jobId,
         context,
