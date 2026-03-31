@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   createRecipeSchema,
   listRecipesQuerySchema,
+  saveRecipeUrlSchema,
   sourceTypeSchema,
   summarizeJobHandleSchema,
   summarizeJobResultSchema,
@@ -49,10 +50,11 @@ const recipeSchema = registry.register(
     sourceUrl: z.string().url(),
     sourceType: sourceTypeOpenApiSchema,
     title: z.string().min(1).max(140),
-    ingredientsText: z.string().min(1),
-    stepsText: z.string().min(1),
+    ingredientsText: z.string(),
+    stepsText: z.string(),
     summarySource: summarySourceOpenApiSchema,
     aiConfidence: z.number().min(0).max(1).nullable(),
+    isSaved: z.boolean(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime()
   })
@@ -68,6 +70,7 @@ const summarizeJobResultOpenApiSchema = summarizeJobResultSchema.openapi(
 );
 
 const createRecipeRequestSchema = createRecipeSchema.openapi("CreateRecipeRequest");
+const saveRecipeUrlRequestSchema = saveRecipeUrlSchema.openapi("SaveRecipeUrlRequest");
 const updateRecipeRequestSchema = updateRecipeSchema.openapi("UpdateRecipeRequest", {
   description: "At least one field must be provided.",
   minProperties: 1
@@ -162,6 +165,49 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: summarizeJobHandleOpenApiSchema
+        }
+      }
+    },
+    400: {
+      description: "Validation error",
+      content: {
+        "application/json": {
+          schema: errorResponseSchema
+        }
+      }
+    },
+    401: {
+      description: "Unauthorized",
+      content: {
+        "application/json": {
+          schema: errorResponseSchema
+        }
+      }
+    }
+  }
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/recipes/save-url",
+  tags: ["Recipes"],
+  summary: "Save a recipe link with a best-effort title and empty details",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: saveRecipeUrlRequestSchema
+        }
+      }
+    }
+  },
+  responses: {
+    201: {
+      description: "URL saved as a recipe",
+      content: {
+        "application/json": {
+          schema: recipeSchema
         }
       }
     },

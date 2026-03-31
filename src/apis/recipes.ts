@@ -5,6 +5,7 @@ import type {
   ListRecipesRequest,
   ListRecipesResponse,
   RecipeDto,
+  SaveRecipeUrlRequest,
   SummarizeJobHandleResponse,
   SummarizeJobResultResponse,
   SummarizeRecipeRequest,
@@ -61,6 +62,20 @@ export async function getSummarizeJob(jobId: string) {
   }
 
   return (await response.json()) as SummarizeJobResultResponse;
+}
+
+export async function saveRecipeUrl(payload: SaveRecipeUrlRequest) {
+  const response = await fetch("/api/recipes/save-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(await toErrorMessage(response, "Failed to save recipe URL."));
+  }
+
+  return (await response.json()) as RecipeDto;
 }
 
 export async function createRecipe(payload: CreateRecipeRequest) {

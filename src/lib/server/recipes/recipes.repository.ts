@@ -5,6 +5,7 @@ import type {
   ListRecipesQuery,
   PaginatedRecipes,
   Recipe,
+  SourceType,
   UpdateRecipeInput
 } from "@/src/apps/recipes/recipes.types";
 import { prisma } from "@/src/lib/server/prisma";
@@ -51,6 +52,30 @@ export async function createRecipe(userId: string, input: CreateRecipeInput): Pr
       stepsText: input.stepsText.trim(),
       summarySource: input.summarySource,
       aiConfidence: input.aiConfidence ?? null
+    }
+  });
+
+  return toRecipe(recipe);
+}
+
+export async function createRecipeUrlOnly(
+  userId: string,
+  input: {
+    sourceUrl: string;
+    sourceType: SourceType;
+    title: string;
+  }
+): Promise<Recipe> {
+  const recipe = await prisma.recipe.create({
+    data: {
+      userId,
+      sourceUrl: input.sourceUrl.trim(),
+      sourceType: input.sourceType,
+      title: input.title.trim(),
+      ingredientsText: "",
+      stepsText: "",
+      summarySource: "manual",
+      aiConfidence: null
     }
   });
 

@@ -40,6 +40,7 @@ export type ExtractedRecipeContext = {
 
 type ExtractRecipeContextOptions = {
   onStageChange?: (stage: SummarizeJobStage) => Promise<void> | void;
+  enableAudioTranscription?: boolean;
 };
 
 export type RecipeExtractionIssue = {
@@ -244,7 +245,11 @@ async function maybeTranscribeYouTubeAudio(
   transcriptText: string;
   extractionIssue: RecipeExtractionIssue | null;
 }> {
-  if (!context.canonicalVideoId || context.subtitleText.length >= MIN_RECIPE_NARRATIVE_LENGTH) {
+  if (
+    !context.canonicalVideoId ||
+    context.subtitleText.length >= MIN_RECIPE_NARRATIVE_LENGTH ||
+    options.enableAudioTranscription === false
+  ) {
     return {
       transcriptText: "",
       extractionIssue: null

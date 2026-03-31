@@ -31,6 +31,11 @@ export type SummarizeRecipeRequest = {
   sourceUrl: string;
 };
 
+export type SaveRecipeUrlRequest = {
+  sourceUrl: string;
+  title?: string;
+};
+
 export type SummarizeJobStatus =
   | "queued"
   | "extracting"
