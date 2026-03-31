@@ -26,6 +26,7 @@ import { useAuth } from "@/src/apps/app/auth.provider";
 import { useTheme } from "@/src/apps/app/theme.provider";
 import { isYouTubeShortsUrl } from "@/src/apps/recipes/recipes.schemas";
 import { Button } from "@/src/components/ui/button";
+import { Checkbox } from "@/src/components/ui/checkbox";
 import { Input } from "@/src/components/ui/input";
 import { Skeleton } from "@/src/components/ui/skeleton";
 
@@ -2222,7 +2223,7 @@ export function RecipesHomeContainer() {
 
   return (
     <div className="flex min-h-screen justify-center bg-muted/60">
-      <div className="relative flex h-screen w-full max-w-[390px] flex-col overflow-hidden rounded-[28px] border border-border/70 bg-background shadow-2xl">
+      <div className="relative flex h-screen w-full max-w-[390px] flex-col overflow-hidden rounded-[28px] bg-background shadow-2xl">
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
           {/* ══════════════════════════ AUTH ══════════════════════════ */}
           {screen === "auth" && (
@@ -3062,7 +3063,6 @@ export function RecipesHomeContainer() {
                     className="h-12 rounded-xl font-bold"
                     onClick={openCollectionsModal}
                   >
-                    <IcFolder className="mr-2 h-4 w-4" />
                     {ui.detail.collections}
                   </Button>
                   <Button
@@ -3568,15 +3568,12 @@ export function RecipesHomeContainer() {
                           {collection.recipeCount}
                         </p>
                       </div>
-                      <div
-                        className={`flex h-5 w-5 items-center justify-center rounded-full border ${
-                          selected
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border/70 text-transparent"
-                        }`}
-                      >
-                        ✓
-                      </div>
+                      <Checkbox
+                        checked={selected}
+                        className="pointer-events-none"
+                        aria-hidden="true"
+                        tabIndex={-1}
+                      />
                     </button>
                   );
                 })}
