@@ -10,6 +10,7 @@ import {
   markSummarizeJobFailed,
   markSummarizeJobInsufficientContext,
   markSummarizeJobSummarizing,
+  setSummarizeJobStage,
   storeSummarizeJobEvidence
 } from "@/src/lib/server/recipes/recipes-summarize-jobs.repository";
 import { summarizeRecipeFromContext } from "@/src/lib/server/recipes/recipes-summarizer.service";
@@ -26,7 +27,14 @@ export async function runSummarizeJob(jobId: string): Promise<void> {
   let context: ExtractedRecipeContext | null = null;
 
   try {
-    context = await extractRecipeContext({ sourceUrl: job.sourceUrl });
+    context = await extractRecipeContext(
+      { sourceUrl: job.sourceUrl },
+      {
+        onStageChange: async (stage) => {
+          await setSummarizeJobStage(jobId, stage);
+        }
+      }
+    );
 
     await storeSummarizeJobEvidence(jobId, context);
 
@@ -56,6 +64,8 @@ export async function runSummarizeJob(jobId: string): Promise<void> {
     const message =
       error instanceof Error ? error.message : "Unexpected summarize job failure";
 
-    await markSummarizeJobFailed(jobId, "SUMMARIZE_FAILED", message);
+    await markSummarizeJobFailed(jobId, "SUMMARIZE_FAILED", message, {
+      failureKind: "internal_error"
+    });
   }
 }

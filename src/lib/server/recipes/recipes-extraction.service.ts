@@ -1,7 +1,11 @@
 import type { SourceType, SummarizeRecipeInput } from "@/src/apps/recipes/recipes.types";
 import { inferSourceType } from "@/src/lib/server/recipes/recipes.utils";
+import type { SummarizeJobStage } from "@/src/lib/server/recipes/recipes-summarize-jobs.types";
 import { transcribeRecipeAudio } from "@/src/lib/server/recipes/recipes-transcription.service";
-import { downloadYouTubeRecipeAudio } from "@/src/lib/server/recipes/recipes-youtube-audio.service";
+import {
+  downloadYouTubeRecipeAudio,
+  type RecipeAudioDownloadIssue
+} from "@/src/lib/server/recipes/recipes-youtube-audio.service";
 
 const MIN_RECIPE_NARRATIVE_LENGTH = 120;
 
@@ -31,6 +35,18 @@ export type ExtractedRecipeContext = {
   subtitleText: string;
   transcriptText: string;
   evidenceSources: string[];
+  extractionIssue: RecipeExtractionIssue | null;
+};
+
+type ExtractRecipeContextOptions = {
+  onStageChange?: (stage: SummarizeJobStage) => Promise<void> | void;
+};
+
+export type RecipeExtractionIssue = {
+  failureKind: RecipeAudioDownloadIssue["failureKind"];
+  providerCode: string;
+  providerMessage: string;
+  mediaDebug?: Record<string, unknown>;
 };
 
 function emptyRecipeContext(
@@ -44,7 +60,8 @@ function emptyRecipeContext(
     description: "",
     subtitleText: "",
     transcriptText: "",
-    evidenceSources: []
+    evidenceSources: [],
+    extractionIssue: null
   };
 }
 
@@ -199,12 +216,16 @@ function pickCaptionTrack(playerResponse: YouTubePlayerResponse | null): string 
   return preferredTrack?.baseUrl ?? null;
 }
 
-async function fetchYouTubeTranscript(baseUrl: string | null): Promise<string> {
+async function fetchYouTubeTranscript(
+  baseUrl: string | null,
+  options: ExtractRecipeContextOptions
+): Promise<string> {
   if (!baseUrl) {
     return "";
   }
 
   try {
+    await options.onStageChange?.("extracting_subtitles");
     const transcriptXml = await fetchText(baseUrl);
     const lines = Array.from(transcriptXml.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g)).map(
       (match) => normalizeWhitespace(match[1] ?? "")
@@ -217,30 +238,61 @@ async function fetchYouTubeTranscript(baseUrl: string | null): Promise<string> {
 }
 
 async function maybeTranscribeYouTubeAudio(
-  context: Pick<ExtractedRecipeContext, "canonicalVideoId" | "title" | "description" | "subtitleText">
-): Promise<string> {
+  context: Pick<ExtractedRecipeContext, "canonicalVideoId" | "title" | "description" | "subtitleText">,
+  options: ExtractRecipeContextOptions
+): Promise<{
+  transcriptText: string;
+  extractionIssue: RecipeExtractionIssue | null;
+}> {
   if (!context.canonicalVideoId || context.subtitleText.length >= MIN_RECIPE_NARRATIVE_LENGTH) {
-    return "";
+    return {
+      transcriptText: "",
+      extractionIssue: null
+    };
   }
 
-  const audio = await downloadYouTubeRecipeAudio(context.canonicalVideoId);
+  await options.onStageChange?.("downloading_media");
+  const { audio, issue } = await downloadYouTubeRecipeAudio(context.canonicalVideoId);
 
   if (!audio) {
-    return "";
+    return {
+      transcriptText: "",
+      extractionIssue: issue
+    };
   }
 
   try {
-    return await transcribeRecipeAudio(audio, {
-      title: context.title,
-      description: context.description
-    });
+    await options.onStageChange?.("transcribing_audio");
+    return {
+      transcriptText: await transcribeRecipeAudio(audio, {
+        title: context.title,
+        description: context.description
+      }),
+      extractionIssue: null
+    };
   } catch (error) {
     console.error("Recipe audio transcription failed", error);
-    return "";
+
+    return {
+      transcriptText: "",
+      extractionIssue: {
+        failureKind: "transcription_failed",
+        providerCode: "OPENAI_TRANSCRIPTION_FAILED",
+        providerMessage:
+          error instanceof Error ? error.message : "Audio transcription failed.",
+        mediaDebug: {
+          canonicalVideoId: context.canonicalVideoId,
+          model: process.env.OPENAI_TRANSCRIPTION_MODEL ?? "gpt-4o-transcribe"
+        }
+      }
+    };
   }
 }
 
-async function fetchYouTubeContext(sourceUrl: string): Promise<ExtractedRecipeContext> {
+async function fetchYouTubeContext(
+  sourceUrl: string,
+  options: ExtractRecipeContextOptions
+): Promise<ExtractedRecipeContext> {
   const videoId = extractYouTubeVideoId(sourceUrl);
 
   if (!videoId) {
@@ -250,21 +302,28 @@ async function fetchYouTubeContext(sourceUrl: string): Promise<ExtractedRecipeCo
   const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}&hl=ko`;
 
   try {
+    await options.onStageChange?.("extracting_metadata");
     const html = await fetchText(canonicalUrl);
     const playerResponse = extractJsonAssignment(
       html,
       "var ytInitialPlayerResponse = "
     ) as YouTubePlayerResponse | null;
     const videoDetails = playerResponse?.videoDetails;
-    const subtitleText = await fetchYouTubeTranscript(pickCaptionTrack(playerResponse));
+    const subtitleText = await fetchYouTubeTranscript(
+      pickCaptionTrack(playerResponse),
+      options
+    );
     const title = normalizeWhitespace(videoDetails?.title ?? "");
     const description = normalizeWhitespace(videoDetails?.shortDescription ?? "");
-    const transcriptText = await maybeTranscribeYouTubeAudio({
-      canonicalVideoId: videoId,
-      title,
-      description,
-      subtitleText
-    });
+    const { transcriptText, extractionIssue } = await maybeTranscribeYouTubeAudio(
+      {
+        canonicalVideoId: videoId,
+        title,
+        description,
+        subtitleText
+      },
+      options
+    );
     const evidenceSources: string[] = [];
 
     if (title || description) {
@@ -286,28 +345,32 @@ async function fetchYouTubeContext(sourceUrl: string): Promise<ExtractedRecipeCo
       description,
       subtitleText,
       transcriptText,
-      evidenceSources
+      evidenceSources,
+      extractionIssue
     };
   } catch {
-    const transcriptText = await maybeTranscribeYouTubeAudio(
-      emptyRecipeContext("youtube_shorts", videoId)
+    const { transcriptText, extractionIssue } = await maybeTranscribeYouTubeAudio(
+      emptyRecipeContext("youtube_shorts", videoId),
+      options
     );
 
     return {
       ...emptyRecipeContext("youtube_shorts", videoId),
       transcriptText,
-      evidenceSources: transcriptText ? ["openai_audio_transcription"] : []
+      evidenceSources: transcriptText ? ["openai_audio_transcription"] : [],
+      extractionIssue
     };
   }
 }
 
 export async function extractRecipeContext(
-  input: SummarizeRecipeInput
+  input: SummarizeRecipeInput,
+  options: ExtractRecipeContextOptions = {}
 ): Promise<ExtractedRecipeContext> {
   const sourceType = inferSourceType(input.sourceUrl);
 
   if (sourceType === "youtube_shorts") {
-    const youtubeContext = await fetchYouTubeContext(input.sourceUrl);
+    const youtubeContext = await fetchYouTubeContext(input.sourceUrl, options);
 
     if (
       youtubeContext.title ||
@@ -317,8 +380,19 @@ export async function extractRecipeContext(
     ) {
       return youtubeContext;
     }
-  }
 
+    const meta = await fetchPageMeta(input.sourceUrl);
+
+    return {
+      ...youtubeContext,
+      title: meta.title,
+      description: meta.description,
+      evidenceSources: [
+        ...youtubeContext.evidenceSources,
+        ...(meta.title || meta.description ? ["page_meta"] : [])
+      ]
+    };
+  }
   const meta = await fetchPageMeta(input.sourceUrl);
 
   return {
@@ -328,7 +402,8 @@ export async function extractRecipeContext(
     description: meta.description,
     subtitleText: "",
     transcriptText: "",
-    evidenceSources: meta.title || meta.description ? ["page_meta"] : []
+    evidenceSources: meta.title || meta.description ? ["page_meta"] : [],
+    extractionIssue: null
   };
 }
 
