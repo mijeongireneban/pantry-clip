@@ -41,9 +41,9 @@ This list was validated against the current implementation before being added he
   - Completed: the Add screen no longer renders the unused settings button, and the unused icon definition was removed too.
   - Relevant file: `src/apps/recipes/recipes-home.container.tsx`
 
-- [ ] Add a light/dark theme toggle.
-  - Validation: dark mode is effectively forced right now.
-  - Current behavior: `src/app/layout.tsx` hardcodes the `dark` class on the root `<html>` element, and there is no theme state or toggle in the UI.
+- [x] Add a light/dark theme toggle.
+  - Completed: theme is now initialized from saved or system preference, the root layout no longer hardcodes dark mode, and Profile includes a light/dark toggle.
+  - Relevant files: `src/app/layout.tsx`, `src/apps/app/theme.provider.tsx`, `src/apps/recipes/recipes-home.container.tsx`
 
 - [ ] Show the user's name and avatar in Profile.
   - Validation: Profile currently shows a generic user icon and `session?.user.email`.
