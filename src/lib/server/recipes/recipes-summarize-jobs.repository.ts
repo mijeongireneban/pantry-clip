@@ -15,6 +15,10 @@ import type {
 import { prisma } from "@/src/lib/server/prisma";
 import { inferSourceType } from "@/src/lib/server/recipes/recipes.utils";
 import type { ExtractedRecipeContext } from "@/src/lib/server/recipes/recipes-extraction.service";
+import type {
+  SummarizeJobFailureKind,
+  SummarizeJobStage
+} from "@/src/lib/server/recipes/recipes-summarize-jobs.types";
 
 type SummarizeJobRecord = {
   id: string;
@@ -66,7 +70,8 @@ export async function createSummarizeJob(
       userId,
       sourceUrl,
       sourceType: inferSourceType(sourceUrl),
-      status: "queued"
+      status: "queued",
+      stage: "queued"
     },
     select: {
       id: true,
@@ -122,10 +127,30 @@ export async function markSummarizeJobExtracting(jobId: string) {
     where: { id: jobId },
     data: {
       status: "extracting",
+      stage: "extracting_metadata",
+      attemptCount: { increment: 1 },
+      lastAttemptAt: new Date(),
       errorCode: null,
       errorMessage: null,
+      providerCode: null,
+      providerMessage: null,
+      failureKind: null,
+      mediaDebug: Prisma.JsonNull,
       confidence: null,
       draftPayload: Prisma.JsonNull,
+      updatedAt: new Date()
+    }
+  });
+}
+
+export async function setSummarizeJobStage(
+  jobId: string,
+  stage: SummarizeJobStage
+) {
+  await prisma.summarizeJob.update({
+    where: { id: jobId },
+    data: {
+      stage,
       updatedAt: new Date()
     }
   });
@@ -154,6 +179,7 @@ export async function markSummarizeJobSummarizing(jobId: string) {
     where: { id: jobId },
     data: {
       status: "summarizing",
+      stage: "summarizing",
       updatedAt: new Date()
     }
   });
@@ -168,6 +194,7 @@ export async function completeSummarizeJob(
     where: { id: jobId },
     data: {
       status: "completed",
+      stage: "completed",
       canonicalVideoId: context.canonicalVideoId,
       titleHint: context.title || null,
       descriptionHint: context.description || null,
@@ -182,6 +209,9 @@ export async function completeSummarizeJob(
       } as Prisma.InputJsonValue,
       errorCode: null,
       errorMessage: null,
+      providerCode: null,
+      providerMessage: null,
+      failureKind: null,
       updatedAt: new Date()
     }
   });
@@ -196,6 +226,7 @@ export async function markSummarizeJobInsufficientContext(
     where: { id: jobId },
     data: {
       status: "insufficient_context",
+      stage: "insufficient_context",
       canonicalVideoId: context.canonicalVideoId,
       titleHint: context.title || null,
       descriptionHint: context.description || null,
@@ -206,6 +237,12 @@ export async function markSummarizeJobInsufficientContext(
       draftPayload: Prisma.JsonNull,
       errorCode: "INSUFFICIENT_CONTEXT",
       errorMessage: message,
+      failureKind: context.extractionIssue?.failureKind ?? "insufficient_context",
+      providerCode: context.extractionIssue?.providerCode ?? null,
+      providerMessage: context.extractionIssue?.providerMessage ?? null,
+      mediaDebug: context.extractionIssue?.mediaDebug
+        ? (context.extractionIssue.mediaDebug as Prisma.InputJsonValue)
+        : Prisma.JsonNull,
       updatedAt: new Date()
     }
   });
@@ -214,14 +251,25 @@ export async function markSummarizeJobInsufficientContext(
 export async function markSummarizeJobFailed(
   jobId: string,
   errorCode: string,
-  message: string
+  message: string,
+  options: {
+    failureKind?: SummarizeJobFailureKind;
+    providerCode?: string | null;
+    providerMessage?: string | null;
+    mediaDebug?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+  } = {}
 ) {
   await prisma.summarizeJob.update({
     where: { id: jobId },
     data: {
       status: "failed",
+      stage: "failed",
       errorCode,
       errorMessage: message,
+      providerCode: options.providerCode ?? null,
+      providerMessage: options.providerMessage ?? null,
+      failureKind: options.failureKind ?? "internal_error",
+      mediaDebug: options.mediaDebug ?? Prisma.JsonNull,
       updatedAt: new Date()
     }
   });

@@ -2,6 +2,8 @@ import { Readable } from "node:stream";
 
 import ytdl from "@distube/ytdl-core";
 
+import type { SummarizeJobFailureKind } from "@/src/lib/server/recipes/recipes-summarize-jobs.types";
+
 const MAX_TRANSCRIPTION_AUDIO_BYTES = 24 * 1024 * 1024;
 const YOUTUBE_REQUEST_HEADERS = {
   "User-Agent": "Mozilla/5.0 (compatible; PantryClip/1.0)",
@@ -15,6 +17,18 @@ export type DownloadedRecipeAudio = {
   fileName: string;
   mimeType: string;
   estimatedBytes: number | null;
+};
+
+export type RecipeAudioDownloadIssue = {
+  failureKind: SummarizeJobFailureKind;
+  providerCode: string;
+  providerMessage: string;
+  mediaDebug?: Record<string, unknown>;
+};
+
+export type DownloadYouTubeRecipeAudioResult = {
+  audio: DownloadedRecipeAudio | null;
+  issue: RecipeAudioDownloadIssue | null;
 };
 
 function parsePositiveInteger(value: string | number | null | undefined): number | null {
@@ -144,9 +158,76 @@ async function readStreamToBuffer(stream: Readable, maxBytes: number): Promise<B
   });
 }
 
+function normalizeErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown media download error";
+}
+
+function readStatusCode(error: unknown): number | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  const candidate = error as { statusCode?: unknown; status?: unknown };
+
+  if (typeof candidate.statusCode === "number") {
+    return candidate.statusCode;
+  }
+
+  if (typeof candidate.status === "number") {
+    return candidate.status;
+  }
+
+  return null;
+}
+
+function inferDownloadIssue(
+  canonicalVideoId: string,
+  error: unknown
+): RecipeAudioDownloadIssue {
+  const message = normalizeErrorMessage(error);
+  const statusCode = readStatusCode(error);
+  const lowerMessage = message.toLowerCase();
+  const mediaDebug = {
+    canonicalVideoId,
+    statusCode,
+    errorName: error instanceof Error ? error.name : null
+  } satisfies Record<string, unknown>;
+
+  if (statusCode === 429 || lowerMessage.includes("status code: 429")) {
+    return {
+      failureKind: "source_rate_limited",
+      providerCode: "YOUTUBE_RATE_LIMITED",
+      providerMessage: message,
+      mediaDebug
+    };
+  }
+
+  if (
+    statusCode === 403 ||
+    statusCode === 404 ||
+    statusCode === 410 ||
+    lowerMessage.includes("video unavailable") ||
+    lowerMessage.includes("private video")
+  ) {
+    return {
+      failureKind: "source_unavailable",
+      providerCode: "YOUTUBE_SOURCE_UNAVAILABLE",
+      providerMessage: message,
+      mediaDebug
+    };
+  }
+
+  return {
+    failureKind: "media_download_failed",
+    providerCode: "YOUTUBE_AUDIO_DOWNLOAD_FAILED",
+    providerMessage: message,
+    mediaDebug
+  };
+}
+
 export async function downloadYouTubeRecipeAudio(
   canonicalVideoId: string
-): Promise<DownloadedRecipeAudio | null> {
+): Promise<DownloadYouTubeRecipeAudioResult> {
   try {
     const watchUrl = `https://www.youtube.com/watch?v=${canonicalVideoId}&hl=ko`;
     const info = await ytdl.getInfo(watchUrl, {
@@ -159,13 +240,33 @@ export async function downloadYouTubeRecipeAudio(
     const format = pickPreferredAudioFormat(ytdl.filterFormats(info.formats, "audioonly"));
 
     if (!format) {
-      return null;
+      return {
+        audio: null,
+        issue: {
+          failureKind: "media_download_failed",
+          providerCode: "YOUTUBE_AUDIO_FORMAT_UNAVAILABLE",
+          providerMessage: "No supported YouTube audio format was available.",
+          mediaDebug: { canonicalVideoId }
+        }
+      };
     }
 
     const estimatedBytes = estimateFormatSizeBytes(format);
 
     if (estimatedBytes && estimatedBytes > MAX_TRANSCRIPTION_AUDIO_BYTES) {
-      return null;
+      return {
+        audio: null,
+        issue: {
+          failureKind: "media_download_failed",
+          providerCode: "YOUTUBE_AUDIO_TOO_LARGE",
+          providerMessage: "The selected YouTube audio stream exceeded the transcription size limit.",
+          mediaDebug: {
+            canonicalVideoId,
+            estimatedBytes,
+            maxBytes: MAX_TRANSCRIPTION_AUDIO_BYTES
+          }
+        }
+      };
     }
 
     const buffer = await readStreamToBuffer(
@@ -178,13 +279,19 @@ export async function downloadYouTubeRecipeAudio(
     );
 
     return {
-      buffer,
-      fileName: `short-${canonicalVideoId}.${containerToExtension(format.container)}`,
-      mimeType: format.mimeType?.split(";")[0] ?? containerToMimeType(format.container),
-      estimatedBytes
+      audio: {
+        buffer,
+        fileName: `short-${canonicalVideoId}.${containerToExtension(format.container)}`,
+        mimeType: format.mimeType?.split(";")[0] ?? containerToMimeType(format.container),
+        estimatedBytes
+      },
+      issue: null
     };
   } catch (error) {
     console.error("YouTube audio download failed", error);
-    return null;
+    return {
+      audio: null,
+      issue: inferDownloadIssue(canonicalVideoId, error)
+    };
   }
 }

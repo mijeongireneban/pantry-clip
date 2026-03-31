@@ -13,6 +13,8 @@
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "typecheck": "tsc --noEmit",
+    "worker": "tsx src/worker/worker.ts",
+    "worker:migrate": "tsx src/worker/migrate.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:studio": "prisma studio"
@@ -23,11 +25,13 @@
     "@prisma/client": "^6.5.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.49.4",
+    "graphile-worker": "^0.16.6",
     "next": "latest",
     "openai": "^6.32.0",
     "react": "latest",
     "react-dom": "latest",
     "swagger-ui-dist": "^5.32.0",
+    "tsx": "^4.21.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

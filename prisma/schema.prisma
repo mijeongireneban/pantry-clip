@@ -33,6 +33,34 @@ enum SummarizeJobStatus {
   @@map("summarize_job_status")
 }
 
+enum SummarizeJobStage {
+  queued
+  extracting_metadata
+  extracting_subtitles
+  downloading_media
+  transcribing_audio
+  extracting_frames
+  analyzing_frames
+  summarizing
+  completed
+  insufficient_context
+  failed
+
+  @@map("summarize_job_stage")
+}
+
+enum SummarizeJobFailureKind {
+  source_rate_limited
+  source_unavailable
+  media_download_failed
+  transcription_failed
+  vision_failed
+  insufficient_context
+  internal_error
+
+  @@map("summarize_job_failure_kind")
+}
+
 model User {
   id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email         String         @unique
@@ -70,12 +98,19 @@ model SummarizeJob {
   sourceUrl        String             @map("source_url")
   sourceType       SourceType         @map("source_type")
   status           SummarizeJobStatus
+  stage            SummarizeJobStage  @default(queued)
   canonicalVideoId String?            @map("canonical_video_id")
   titleHint        String?            @map("title_hint")
   descriptionHint  String?            @map("description_hint")
   subtitleText     String?            @map("subtitle_text")
   transcriptText   String?            @map("transcript_text")
   evidenceSources  Json?              @map("evidence_sources")
+  attemptCount     Int                @default(0) @map("attempt_count")
+  lastAttemptAt    DateTime?          @map("last_attempt_at") @db.Timestamptz(6)
+  providerCode     String?            @map("provider_code")
+  providerMessage  String?            @map("provider_message")
+  failureKind      SummarizeJobFailureKind? @map("failure_kind")
+  mediaDebug       Json?              @map("media_debug")
   confidence       Float?             @map("confidence")
   draftPayload     Json?              @map("draft_payload")
   errorCode        String?            @map("error_code")
