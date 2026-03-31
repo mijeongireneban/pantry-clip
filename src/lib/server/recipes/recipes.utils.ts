@@ -1,3 +1,4 @@
+import { isYouTubeShortsUrl } from "@/src/apps/recipes/recipes.schemas";
 import type { SourceType } from "@/src/apps/recipes/recipes.types";
 import { ApiError } from "@/src/lib/utils/api-error";
 
@@ -9,7 +10,7 @@ export type RecipesCursor = {
 export function inferSourceType(sourceUrl: string): SourceType {
   const normalized = sourceUrl.toLowerCase();
 
-  if (normalized.includes("youtube.com/shorts") || normalized.includes("youtu.be/")) {
+  if (isYouTubeShortsUrl(sourceUrl)) {
     return "youtube_shorts";
   }
 

@@ -14,6 +14,7 @@ import {
   updateRecipe as updateRecipeRequest
 } from "@/src/apis/recipes";
 import { useAuth } from "@/src/apps/app/auth.provider";
+import { isYouTubeShortsUrl } from "@/src/apps/recipes/recipes.schemas";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { Skeleton } from "@/src/components/ui/skeleton";
@@ -52,7 +53,7 @@ type RecipeDraft = {
 
 function inferSourceType(url: string): SourceType {
   const n = url.toLowerCase();
-  if (n.includes("youtube.com/shorts") || n.includes("youtu.be/")) return "youtube_shorts";
+  if (isYouTubeShortsUrl(url)) return "youtube_shorts";
   if (n.includes("instagram.com/reel")) return "instagram_reels";
   return "other";
 }
@@ -458,12 +459,6 @@ const IcSearch = ({ className }: { className?: string }) => (
     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
   </svg>
 );
-const IcSettings = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="3"/>
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-  </svg>
-);
 const IcLink = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
@@ -811,14 +806,31 @@ function BottomNav({ activeTab, language, onLibrary, onAdd, onScrap, onProfile }
   );
 }
 
+function RecipeCardSkeleton({ showBookmark = false }: { showBookmark?: boolean }) {
+  return (
+    <div className="w-full overflow-hidden rounded-2xl bg-card">
+      <div className="relative h-[160px] w-full">
+        <Skeleton className="h-full w-full" />
+        {showBookmark && <Skeleton className="absolute left-3 top-3 h-4 w-4 rounded-sm" />}
+        <Skeleton className="absolute right-3 top-3 h-6 w-24 rounded-full" />
+      </div>
+      <div className="space-y-2 p-4">
+        <Skeleton className="h-5 w-3/4" />
+        <Skeleton className="h-3 w-24" />
+      </div>
+    </div>
+  );
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export function RecipesHomeContainer() {
   const { isReady, session, signInWithPassword, signOut, signUpWithPassword } = useAuth();
-  const [language, setLanguage]               = useState<Language>("ko");
+  const [language, setLanguage]               = useState<Language>("en");
   const [screen, setScreen]                   = useState<Screen>("auth");
   const [searchQuery, setSearchQuery]         = useState("");
   const [recipes, setRecipes]                 = useState<Recipe[]>([]);
+  const [isRecipesLoading, setIsRecipesLoading] = useState(false);
   const [selectedRecipeId, setSelectedRecipeId] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [authEmail, setAuthEmail]             = useState("");
@@ -845,6 +857,7 @@ export function RecipesHomeContainer() {
 
   const selectedRecipe = useMemo(() => recipes.find((r) => r.id === selectedRecipeId) ?? null, [recipes, selectedRecipeId]);
   const ui = copy[language];
+  const isInitialRecipesLoading = isRecipesLoading && recipes.length === 0;
   const filteredRecipes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return q ? recipes.filter((r) => r.title.toLowerCase().includes(q)) : recipes;
@@ -881,9 +894,10 @@ export function RecipesHomeContainer() {
   }, [isReady, session]);
 
   useEffect(() => {
-    if (!isReady || !session) { setRecipes([]); setSelectedRecipeId(""); return; }
+    if (!isReady || !session) { setRecipes([]); setSelectedRecipeId(""); setIsRecipesLoading(false); return; }
     void (async () => {
       try {
+        setIsRecipesLoading(true);
         setRecipesError("");
         const res = await listRecipesRequest();
         const items = res.items.map(toRecipe);
@@ -891,6 +905,8 @@ export function RecipesHomeContainer() {
         setSelectedRecipeId((c) => c || items[0]?.id || "");
       } catch (err) {
         setRecipesError(err instanceof Error ? err.message : ui.library.loadError);
+      } finally {
+        setIsRecipesLoading(false);
       }
     })();
   }, [isReady, session, ui.library.loadError]);
@@ -1290,13 +1306,19 @@ export function RecipesHomeContainer() {
                 </div>
 
                 {/* Empty states */}
-                {recipes.length === 0 && !recipesError && (
+                {isInitialRecipesLoading && (
+                  <div className="mt-4 space-y-4">
+                    <RecipeCardSkeleton showBookmark />
+                    <RecipeCardSkeleton showBookmark />
+                  </div>
+                )}
+                {recipes.length === 0 && !recipesError && !isInitialRecipesLoading && (
                   <div className="mt-4 rounded-2xl bg-card p-6 text-center">
                     <p className="font-semibold">{ui.library.noRecipes}</p>
                     <p className="mt-1 text-xs text-muted-foreground">{ui.library.noRecipesDescription}</p>
                   </div>
                 )}
-                {recipes.length > 0 && filteredRecipes.length === 0 && (
+                {recipes.length > 0 && filteredRecipes.length === 0 && !isInitialRecipesLoading && (
                   <div className="mt-4 rounded-2xl bg-card p-6 text-center">
                     <p className="font-semibold">{ui.library.noMatches}</p>
                     <p className="mt-1 text-xs text-muted-foreground">{ui.library.noMatchesDescription}</p>
@@ -1304,7 +1326,7 @@ export function RecipesHomeContainer() {
                 )}
 
                 {/* Recipe cards */}
-                <div className="mt-4 space-y-4">
+                <div className={`mt-4 space-y-4 ${isInitialRecipesLoading ? "hidden" : ""}`}>
                   {filteredRecipes.map((recipe) => (
                     <button
                       key={recipe.id}
@@ -1314,6 +1336,11 @@ export function RecipesHomeContainer() {
                     >
                       <div className="relative h-[160px] w-full">
                         <RecipeThumbnail key={recipe.sourceUrl} recipe={recipe} alt={recipe.title} className="h-full w-full object-cover" />
+                        <div className="absolute left-3 top-3">
+                          <IcBookmark
+                            className={`h-4 w-4 ${recipe.isSaved ? "fill-primary text-primary" : "text-white/75"}`}
+                          />
+                        </div>
                         <div className="absolute right-3 top-3">
                           <SourceBadge language={language} sourceType={recipe.sourceType} summarySource={recipe.summarySource} overlay />
                         </div>
@@ -1361,11 +1388,8 @@ export function RecipesHomeContainer() {
           {screen === "add" && (
             <div className="pb-6">
               {/* Top bar */}
-              <div className="flex items-center justify-between px-5 pt-5 pb-4">
+              <div className="flex items-center px-5 pt-5 pb-4">
                 <Logo />
-                <div className="flex items-center gap-4">
-                  <button type="button" className="text-muted-foreground"><IcSettings className="h-5 w-5" /></button>
-                </div>
               </div>
 
               <div className="px-5">
@@ -1732,7 +1756,12 @@ export function RecipesHomeContainer() {
                 <h1 className="text-[32px] font-bold leading-tight">{ui.saved.title}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">{ui.saved.subtitle}</p>
 
-                {recipes.filter((r) => r.isSaved).length === 0 ? (
+                {isInitialRecipesLoading ? (
+                  <div className="mt-4 space-y-4">
+                    <RecipeCardSkeleton showBookmark />
+                    <RecipeCardSkeleton showBookmark />
+                  </div>
+                ) : recipes.filter((r) => r.isSaved).length === 0 ? (
                   <div className="mt-8 flex flex-col items-center gap-4 py-12 text-center">
                     <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-card">
                       <IcBookmark className="h-7 w-7 text-muted-foreground" />

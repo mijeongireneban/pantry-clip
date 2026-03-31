@@ -34,7 +34,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className={`dark ${outfit.variable} ${merriweather.variable} ${googleSansMono.variable}`}>
+    <html lang="en" className={`dark ${outfit.variable} ${merriweather.variable} ${googleSansMono.variable}`}>
       <body>
         <AppProvider>{children}</AppProvider>
         <Analytics />
