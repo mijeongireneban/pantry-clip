@@ -21,7 +21,8 @@ export async function summarizeRecipeFromContext(
 
   if (context.title) contextLines.push(`제목: ${context.title}`);
   if (context.description) contextLines.push(`설명: ${context.description}`);
-  if (context.transcript) contextLines.push(`자막/음성 전사: ${context.transcript}`);
+  if (context.subtitleText) contextLines.push(`자막: ${context.subtitleText}`);
+  if (context.transcriptText) contextLines.push(`음성 전사(자동): ${context.transcriptText}`);
 
   const prompt = `당신은 요리 레시피 전문가입니다. 아래 동영상 링크 정보를 바탕으로 레시피 초안을 작성해주세요. 모든 내용은 한국어로 작성합니다.
 
@@ -38,6 +39,7 @@ ${contextLines.join("\n")}
 규칙:
 - 재료는 개별 항목으로 나열 (각 항목 앞에 "- " 불필요)
 - 조리 단계는 순서대로, 각 단계는 명확하고 구체적으로
+- 자막과 음성 전사가 모두 있으면 서로 겹치는 사실만 더 강하게 신뢰하세요
 - 문맥에서 확인되지 않은 재료나 단계를 추측으로 채우지 마세요
 - 정확한 요리 종류를 식별할 수 없으면 빈 제목과 빈 배열을 반환하고 confidence를 0으로 설정하세요
 - 제목은 요리 이름만 (예: "간장 계란밥", "떡볶이")`;

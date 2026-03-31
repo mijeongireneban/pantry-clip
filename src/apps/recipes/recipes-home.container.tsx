@@ -545,6 +545,11 @@ export function RecipesHomeContainer() {
     const sourceUrl = addUrl.trim();
     if (!sourceUrl) { setUrlError("URL을 입력해주세요."); return; }
     if (!/^https?:\/\//i.test(sourceUrl)) { setUrlError("http:// 또는 https://로 시작하는 URL을 입력해주세요."); return; }
+    if (inferSourceType(sourceUrl) !== "youtube_shorts") {
+      setUrlError("AI draft generation currently supports YouTube Shorts only. You can still continue manually.");
+      openManualDraft(sourceUrl);
+      return;
+    }
     setUrlError(""); setIsGenerating(true); setSummarizeJobStatus("queued");
     try {
       const handle = await createSummarizeJobRequest({ sourceUrl });
@@ -950,13 +955,20 @@ export function RecipesHomeContainer() {
               <div className="px-5">
                 <h1 className="text-[32px] font-bold leading-tight">Add Recipe</h1>
                 <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Add New Recipe</p>
+                <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/10 p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">Current AI Support</p>
+                  <p className="mt-1 text-sm font-semibold">YouTube Shorts only</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    AI draft generation currently works only with YouTube Shorts links. Other links can still be saved manually.
+                  </p>
+                </div>
 
                 {/* ── Paste URL ── */}
                 <div className="mt-6">
                   <div className="relative">
                     <Input
                       className="h-12 rounded-xl border-0 bg-card pr-12 text-sm focus-visible:ring-1 focus-visible:ring-primary"
-                      placeholder="https://recipe-link.com/..."
+                      placeholder="https://youtube.com/shorts/..."
                       value={addUrl}
                       onChange={(e) => setAddUrl(e.target.value)}
                     />
