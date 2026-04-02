@@ -1,20 +1,37 @@
 "use client";
 
-import type { Session } from "@supabase/supabase-js";
+import type { Session, User } from "@supabase/supabase-js";
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 
 import { getSupabaseBrowserClient } from "@/src/lib/auth/supabase-client";
+
+type SignUpResult = "created" | "already_registered";
 
 type AuthContextValue = {
   isReady: boolean;
   session: Session | null;
   userEmail: string | null;
   signInWithPassword: (email: string, password: string) => Promise<void>;
-  signUpWithPassword: (email: string, password: string) => Promise<void>;
+  signUpWithPassword: (email: string, password: string) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+function isObfuscatedDuplicateSignUp(user: User | null, session: Session | null) {
+  if (!user || session) {
+    return false;
+  }
+
+  const hasEmailIdentity = user.identities?.some(
+    (identity) => identity.provider === "email"
+  );
+  const hasEmailProvider = user.app_metadata?.provider === "email";
+
+  // Supabase can return an obfuscated user object for existing confirmed accounts
+  // instead of throwing "User already registered", depending on Auth settings.
+  return !hasEmailIdentity && !hasEmailProvider;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
@@ -71,11 +88,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       async signUpWithPassword(email: string, password: string) {
         const supabase = getSupabaseBrowserClient();
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email, password });
 
         if (error) {
+          if (error.message.toLowerCase().includes("already registered")) {
+            return "already_registered";
+          }
+
           throw error;
         }
+
+        if (isObfuscatedDuplicateSignUp(data.user, data.session)) {
+          return "already_registered";
+        }
+
+        return "created";
       },
       async signOut() {
         const supabase = getSupabaseBrowserClient();
