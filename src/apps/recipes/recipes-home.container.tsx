@@ -29,6 +29,7 @@ import { Button } from "@/src/components/ui/button";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import { Input } from "@/src/components/ui/input";
 import { Skeleton } from "@/src/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/src/components/ui/toggle-group";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -240,6 +241,9 @@ const copy = {
       ai: "AI"
     },
     auth: {
+      languageLabel: "언어",
+      languageKorean: "한국어",
+      languageEnglish: "English",
       welcomeBack: "다시 오신 것을 환영합니다",
       createAccount: "계정을 만들어보세요",
       signInDescription: "계정에 로그인하고 PantryClip을 계속 사용하세요.",
@@ -434,6 +438,9 @@ const copy = {
       ai: "AI"
     },
     auth: {
+      languageLabel: "Language",
+      languageKorean: "한국어",
+      languageEnglish: "English",
       welcomeBack: "Welcome back",
       createAccount: "Create account",
       signInDescription: "Sign in to continue using PantryClip.",
@@ -1385,6 +1392,12 @@ export function RecipesHomeContainer() {
     savedCollectionRecipes.length === 0 &&
     collections.length > 0;
 
+  const handleLanguageChange = (value: string) => {
+    if (value === "ko" || value === "en") {
+      setLanguage(value);
+    }
+  };
+
   const matchesSavedCollectionFilter = (recipe: Recipe) => {
     if (selectedSavedCollectionId === ALL_SAVED_COLLECTION_ID) {
       return recipe.isSaved;
@@ -2228,6 +2241,25 @@ export function RecipesHomeContainer() {
           {/* ══════════════════════════ AUTH ══════════════════════════ */}
           {screen === "auth" && (
             <div className="flex min-h-screen flex-col justify-center px-7 py-12">
+              <div className="mb-8 flex items-center justify-end gap-3">
+                <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                  {ui.auth.languageLabel}
+                </span>
+                <ToggleGroup
+                  aria-label={ui.auth.languageLabel}
+                  type="single"
+                  value={language}
+                  onValueChange={handleLanguageChange}
+                >
+                  <ToggleGroupItem value="ko">
+                    {ui.auth.languageKorean}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="en">
+                    {ui.auth.languageEnglish}
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+
               {/* Logo + heading */}
               <div className="mb-10 flex flex-col items-center gap-4 text-center">
                 <div className="flex items-center gap-2.5">
