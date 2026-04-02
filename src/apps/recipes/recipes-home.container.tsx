@@ -258,6 +258,8 @@ const copy = {
       signInSwitch: "로그인",
       signUpNotice:
         "계정이 생성되었습니다. 이메일을 확인하여 인증을 완료해주세요.",
+      emailAlreadyRegistered:
+        "이 이메일로 가입된 계정이 이미 있습니다. 로그인으로 계속해주세요.",
       authFailed: "인증에 실패했습니다."
     },
     library: {
@@ -452,6 +454,8 @@ const copy = {
       signInSwitch: "Sign In",
       signUpNotice:
         "Your account was created. Please check your email to confirm it.",
+      emailAlreadyRegistered:
+        "An account already exists for this email. Please continue by signing in.",
       authFailed: "Authentication failed."
     },
     library: {
@@ -1935,7 +1939,14 @@ export function RecipesHomeContainer() {
     setAuthBusy(true);
     try {
       if (authMode === "sign_up") {
-        await signUpWithPassword(authEmail.trim(), authPassword);
+        const result = await signUpWithPassword(authEmail.trim(), authPassword);
+
+        if (result === "already_registered") {
+          setAuthMode("sign_in");
+          setAuthError(ui.auth.emailAlreadyRegistered);
+          return;
+        }
+
         setAuthNotice(ui.auth.signUpNotice);
         setAuthPassword("");
         return;
