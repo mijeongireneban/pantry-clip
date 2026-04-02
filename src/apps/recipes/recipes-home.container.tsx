@@ -250,6 +250,8 @@ const copy = {
       signUpDescription: "짧은 요리 영상을 나만의 레시피로 저장해보세요.",
       email: "이메일",
       password: "비밀번호",
+      confirmPassword: "비밀번호 확인",
+      passwordMismatch: "비밀번호가 일치하지 않습니다.",
       forgotPassword: "비밀번호 찾기",
       loading: "로딩 중...",
       login: "로그인",
@@ -447,6 +449,8 @@ const copy = {
       signUpDescription: "Save short cooking videos as your own recipes.",
       email: "Email",
       password: "Password",
+      confirmPassword: "Confirm Password",
+      passwordMismatch: "Passwords do not match.",
       forgotPassword: "Forgot Password?",
       loading: "Loading...",
       login: "Login",
@@ -1324,8 +1328,10 @@ export function RecipesHomeContainer() {
   const [showCollectionsModal, setShowCollectionsModal] = useState(false);
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authConfirmPassword, setAuthConfirmPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
+  const [authConfirmPasswordError, setAuthConfirmPasswordError] = useState("");
   const [authMode, setAuthMode] = useState<"sign_in" | "sign_up">("sign_in");
   const [authBusy, setAuthBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -1945,12 +1951,20 @@ export function RecipesHomeContainer() {
   const handleAuthSubmit = async () => {
     setAuthError("");
     setAuthNotice("");
+    setAuthConfirmPasswordError("");
+
+    if (authMode === "sign_up" && authPassword !== authConfirmPassword) {
+      setAuthConfirmPasswordError(ui.auth.passwordMismatch);
+      return;
+    }
+
     setAuthBusy(true);
     try {
       if (authMode === "sign_up") {
         await signUpWithPassword(authEmail.trim(), authPassword);
         setAuthNotice(ui.auth.signUpNotice);
         setAuthPassword("");
+        setAuthConfirmPassword("");
         return;
       }
       await signInWithPassword(authEmail.trim(), authPassword);
@@ -2320,7 +2334,12 @@ export function RecipesHomeContainer() {
                     <Input
                       type={showPassword ? "text" : "password"}
                       value={authPassword}
-                      onChange={(e) => setAuthPassword(e.target.value)}
+                      onChange={(e) => {
+                        setAuthPassword(e.target.value);
+                        if (authConfirmPasswordError) {
+                          setAuthConfirmPasswordError("");
+                        }
+                      }}
                       className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 pr-11 text-sm focus-visible:ring-1 focus-visible:ring-primary"
                     />
                     <button
@@ -2336,6 +2355,45 @@ export function RecipesHomeContainer() {
                     </button>
                   </div>
                 </div>
+
+                {authMode === "sign_up" && (
+                  <div className="space-y-2">
+                    <Label>{ui.auth.confirmPassword}</Label>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-4 flex items-center">
+                        <IcLock className="h-[18px] w-[18px] text-muted-foreground" />
+                      </div>
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        value={authConfirmPassword}
+                        onChange={(e) => {
+                          setAuthConfirmPassword(e.target.value);
+                          if (authConfirmPasswordError) {
+                            setAuthConfirmPasswordError("");
+                          }
+                        }}
+                        aria-invalid={authConfirmPasswordError ? "true" : "false"}
+                        className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 pr-11 text-sm focus-visible:ring-1 focus-visible:ring-primary"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="absolute inset-y-0 right-4 flex items-center text-muted-foreground"
+                      >
+                        {showPassword ? (
+                          <IcEyeOff className="h-[18px] w-[18px]" />
+                        ) : (
+                          <IcEye className="h-[18px] w-[18px]" />
+                        )}
+                      </button>
+                    </div>
+                    {authConfirmPasswordError && (
+                      <p className="text-xs text-destructive">
+                        {authConfirmPasswordError}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {authError && (
                   <p className="text-sm text-destructive">{authError}</p>
@@ -2376,8 +2434,10 @@ export function RecipesHomeContainer() {
                       setAuthMode((m) =>
                         m === "sign_in" ? "sign_up" : "sign_in"
                       );
+                      setAuthConfirmPassword("");
                       setAuthError("");
                       setAuthNotice("");
+                      setAuthConfirmPasswordError("");
                     }}
                   >
                     {authMode === "sign_in"
