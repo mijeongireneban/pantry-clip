@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { RecipeCollectionDto } from "@/src/apis/@types/recipe-collections";
-import type { RecipeDto, SummarizeJobStatus } from "@/src/apis/@types/recipes";
+import type {
+  RecipeDto,
+  RecipeSpotlightResponse,
+  RecipeSpotlightSource,
+  SummarizeJobStatus
+} from "@/src/apis/@types/recipes";
 import {
   createRecipeCollection as createRecipeCollectionRequest,
   deleteRecipeCollection as deleteRecipeCollectionRequest,
@@ -16,15 +21,16 @@ import {
   createRecipe as createRecipeRequest,
   createSummarizeJob as createSummarizeJobRequest,
   deleteRecipe as deleteRecipeRequest,
+  getRecipeSpotlight as getRecipeSpotlightRequest,
   getSummarizeJob as getSummarizeJobRequest,
   listRecipes as listRecipesRequest,
   saveRecipeUrl as saveRecipeUrlRequest,
-  toggleSaveRecipe as toggleSaveRecipeRequest,
   updateRecipe as updateRecipeRequest
 } from "@/src/apis/recipes";
 import { useAuth } from "@/src/apps/app/auth.provider";
 import { useTheme } from "@/src/apps/app/theme.provider";
 import { isYouTubeShortsUrl } from "@/src/apps/recipes/recipes.schemas";
+import { extractYouTubeVideoId } from "@/src/apps/recipes/recipes.utils";
 import { Button } from "@/src/components/ui/button";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import { Input } from "@/src/components/ui/input";
@@ -47,6 +53,8 @@ type Screen =
   | "scrap"
   | "profile";
 type Tab = "library" | "add" | "scrap" | "profile";
+type DetailOrigin = "library" | "saved";
+type CollectionsModalMode = "save" | "manage";
 
 type Recipe = {
   id: string;
@@ -77,6 +85,15 @@ type RecipeDraft = {
   summarySource: SummarySource;
 };
 
+type RecipeSpotlight = {
+  recipe: Recipe;
+  source: Exclude<RecipeSpotlightSource, "none">;
+  stats: {
+    viewCount: number | null;
+    likeCount: number | null;
+  } | null;
+};
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function inferSourceType(url: string): SourceType {
@@ -84,32 +101,6 @@ function inferSourceType(url: string): SourceType {
   if (isYouTubeShortsUrl(url)) return "youtube_shorts";
   if (n.includes("instagram.com/reel")) return "instagram_reels";
   return "other";
-}
-
-function extractYouTubeVideoId(url: string) {
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.toLowerCase();
-
-    if (host === "youtu.be") {
-      return parsed.pathname.split("/").filter(Boolean)[0] ?? null;
-    }
-
-    if (host.includes("youtube.com")) {
-      const shortsMatch = parsed.pathname.match(/^\/shorts\/([^/?#]+)/);
-      if (shortsMatch?.[1]) return shortsMatch[1];
-
-      const watchId = parsed.searchParams.get("v");
-      if (watchId) return watchId;
-
-      const embedMatch = parsed.pathname.match(/^\/embed\/([^/?#]+)/);
-      if (embedMatch?.[1]) return embedMatch[1];
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
 }
 
 function getRecipeThumbnailCandidates(
@@ -224,6 +215,13 @@ function toSummarizeStatusLabel(
   return "Generating...";
 }
 
+function formatCompactCount(value: number, language: Language) {
+  return new Intl.NumberFormat(language === "ko" ? "ko-KR" : "en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1
+  }).format(value);
+}
+
 const LANGUAGE_STORAGE_KEY = "pantryclip-language";
 
 const copy = {
@@ -280,11 +278,15 @@ const copy = {
       noRecipesDescription: "링크를 붙여넣어 첫 번째 레시피를 추가해보세요.",
       noMatches: "검색 결과가 없어요",
       noMatchesDescription: "다른 검색어를 사용해보세요.",
-      tipLabel: "오늘의 레시피 팁",
-      tipTitle: "식재료의 풍미를 극대화하는 시어링 기법",
-      tipBody:
-        "고기나 식재료를 높은 온도에서 빠르게 익혀 마이야르 반응을 일으키는 것은 작은 온도에서 삶는 것과의 차이를 결정하는 핵심입니다. 팬을 충분히 예열하는 것부터 시작하세요.",
-      tipCta: "전문 셰프 가이드 보기",
+      spotlightLabel: "저장한 레시피 중 인기",
+      spotlightFallbackLabel: "저장한 레시피 추천",
+      spotlightPopularBody:
+        "저장한 유튜브 레시피 중 조회수와 좋아요를 기준으로 가장 인기 있는 레시피예요.",
+      spotlightFallbackBody:
+        "유튜브 인기도를 불러오지 못해 최근 저장한 레시피를 대신 보여드려요.",
+      spotlightOpen: "레시피 열기",
+      spotlightViews: "조회수",
+      spotlightLikes: "좋아요",
       aiBannerLabel: "AI 레시피 생성기",
       aiBannerTitle: "새로운 레시피를 오늘 AI로 생성해보세요",
       aiBannerCta: "바로 시작"
@@ -366,11 +368,13 @@ const copy = {
       createCollectionDescription:
         "저장한 레시피를 주제별로 모아볼 수 있는 컬렉션을 만들어보세요.",
       renameCollectionTitle: "컬렉션 이름 변경",
-      renameCollectionDescription:
-        "컬렉션 이름을 새롭게 정리해보세요.",
+      renameCollectionDescription: "컬렉션 이름을 새롭게 정리해보세요.",
       manageCollectionsTitle: "컬렉션 관리",
       manageCollectionsDescription:
         "이 레시피를 포함할 컬렉션을 선택하세요. 모두 해제하면 저장됨에서 빠집니다.",
+      saveToCollectionTitle: "컬렉션에 저장",
+      saveToCollectionDescription: "이 레시피를 저장할 컬렉션을 선택하세요.",
+      saveToCollectionConfirm: "저장",
       editCollectionsTitle: "컬렉션 편집",
       editCollectionsDescription:
         "사용자 컬렉션의 이름을 바꾸거나 삭제할 수 있어요.",
@@ -482,11 +486,15 @@ const copy = {
       noRecipesDescription: "Paste a link to add your first recipe.",
       noMatches: "No matches",
       noMatchesDescription: "Try a different search.",
-      tipLabel: "Recipe Tip of the Day",
-      tipTitle: "Searing technique to maximize ingredient flavor",
-      tipBody:
-        "Quickly searing meat or other ingredients over high heat creates the Maillard reaction and changes the final dish dramatically. Start by preheating the pan properly.",
-      tipCta: "Check Professional Chef Guide",
+      spotlightLabel: "POPULAR",
+      spotlightFallbackLabel: "SPOTLIGHT",
+      spotlightPopularBody:
+        "This is the most popular YouTube recipe among the ones you saved, ranked by views and likes.",
+      spotlightFallbackBody:
+        "YouTube popularity data is not available right now, so we picked a recent saved recipe instead.",
+      spotlightOpen: "Open Recipe",
+      spotlightViews: "views",
+      spotlightLikes: "likes",
       aiBannerLabel: "AI Recipe Generator",
       aiBannerTitle: "Generate your next recipe draft with AI today",
       aiBannerCta: "START NOW"
@@ -568,11 +576,14 @@ const copy = {
       createCollectionDescription:
         "Create a collection to organize saved recipes by theme or occasion.",
       renameCollectionTitle: "Rename Collection",
-      renameCollectionDescription:
-        "Give this collection a clearer name.",
+      renameCollectionDescription: "Give this collection a clearer name.",
       manageCollectionsTitle: "Manage Collections",
       manageCollectionsDescription:
         "Choose which collections should include this recipe. Clear all to unsave it.",
+      saveToCollectionTitle: "Save to Collection",
+      saveToCollectionDescription:
+        "Choose which collection should save this recipe.",
+      saveToCollectionConfirm: "Save",
       editCollectionsTitle: "Edit Collections",
       editCollectionsDescription:
         "Rename or delete your custom collections here.",
@@ -651,6 +662,20 @@ function toRecipe(dto: RecipeDto): Recipe {
     isSaved: dto.isSaved,
     collectionIds: dto.collectionIds,
     updatedAt: dto.updatedAt
+  };
+}
+
+function toRecipeSpotlight(
+  dto: RecipeSpotlightResponse
+): RecipeSpotlight | null {
+  if (!dto.recipe || dto.source === "none") {
+    return null;
+  }
+
+  return {
+    recipe: toRecipe(dto.recipe),
+    source: dto.source,
+    stats: dto.stats
   };
 }
 
@@ -837,6 +862,19 @@ const IcEye = ({ className }: { className?: string }) => (
   >
     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
     <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+const IcHeart = ({ className }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z" />
   </svg>
 );
 const IcEyeOff = ({ className }: { className?: string }) => (
@@ -1297,6 +1335,27 @@ function RecipeCardSkeleton({
   );
 }
 
+function SpotlightCardSkeleton() {
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-border/70 bg-card">
+      <div className="relative h-[168px] w-full">
+        <Skeleton className="h-full w-full" />
+        <Skeleton className="absolute left-4 top-4 h-5 w-40 rounded-full" />
+        <Skeleton className="absolute right-4 top-4 h-6 w-24 rounded-full" />
+      </div>
+      <div className="space-y-3 p-4">
+        <Skeleton className="h-5 w-3/4" />
+        <Skeleton className="h-4 w-full" />
+        <div className="flex gap-3">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-4 w-20" />
+        </div>
+        <Skeleton className="h-4 w-24" />
+      </div>
+    </div>
+  );
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export function RecipesHomeContainer() {
@@ -1309,6 +1368,7 @@ export function RecipesHomeContainer() {
   const { theme, setTheme } = useTheme();
   const [language, setLanguage] = useState<Language>("en");
   const [screen, setScreen] = useState<Screen>("auth");
+  const [detailOrigin, setDetailOrigin] = useState<DetailOrigin>("library");
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -1319,10 +1379,13 @@ export function RecipesHomeContainer() {
   const [selectedSavedCollectionId, setSelectedSavedCollectionId] =
     useState<string>(ALL_SAVED_COLLECTION_ID);
   const [savedRecipes, setSavedRecipes] = useState<Recipe[] | null>(null);
+  const [recipeSpotlight, setRecipeSpotlight] =
+    useState<RecipeSpotlight | null>(null);
   const [isRecipesLoading, setIsRecipesLoading] = useState(false);
   const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [isCollectionsLoading, setIsCollectionsLoading] = useState(false);
   const [isSavedRecipesLoading, setIsSavedRecipesLoading] = useState(false);
+  const [isSpotlightLoading, setIsSpotlightLoading] = useState(false);
   const [selectedRecipeId, setSelectedRecipeId] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showCreateCollectionModal, setShowCreateCollectionModal] =
@@ -1330,6 +1393,8 @@ export function RecipesHomeContainer() {
   const [showEditCollectionsModal, setShowEditCollectionsModal] =
     useState(false);
   const [showCollectionsModal, setShowCollectionsModal] = useState(false);
+  const [collectionsModalMode, setCollectionsModalMode] =
+    useState<CollectionsModalMode>("manage");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authConfirmPassword, setAuthConfirmPassword] = useState("");
@@ -1384,6 +1449,16 @@ export function RecipesHomeContainer() {
     () => (isSearchActive ? (searchResults ?? []) : recipes),
     [isSearchActive, recipes, searchResults]
   );
+  const recipeSpotlightDescription = recipeSpotlight
+    ? recipeSpotlight.source === "youtube_popular"
+      ? ui.library.spotlightPopularBody
+      : ui.library.spotlightFallbackBody
+    : "";
+  const recipeSpotlightLabel = recipeSpotlight
+    ? recipeSpotlight.source === "youtube_popular"
+      ? ui.library.spotlightLabel
+      : ui.library.spotlightFallbackLabel
+    : "";
   const selectedRecipe = useMemo(
     () =>
       savedRecipes?.find((recipe) => recipe.id === selectedRecipeId) ??
@@ -1493,7 +1568,9 @@ export function RecipesHomeContainer() {
     setSavedRecipes((currentSavedRecipes) =>
       currentSavedRecipes === null
         ? currentSavedRecipes
-        : currentSavedRecipes.map(patchRecipe).filter(matchesSavedCollectionFilter)
+        : currentSavedRecipes
+            .map(patchRecipe)
+            .filter(matchesSavedCollectionFilter)
     );
     setCollectionSelection((currentSelection) =>
       currentSelection.filter((id) => id !== collectionId)
@@ -1550,11 +1627,13 @@ export function RecipesHomeContainer() {
       setDefaultCollectionId("");
       setSelectedSavedCollectionId(ALL_SAVED_COLLECTION_ID);
       setSavedRecipes(null);
+      setRecipeSpotlight(null);
       setSelectedRecipeId("");
       setIsRecipesLoading(false);
       setIsSearchLoading(false);
       setIsCollectionsLoading(false);
       setIsSavedRecipesLoading(false);
+      setIsSpotlightLoading(false);
       return;
     }
     const controller = new AbortController();
@@ -1671,16 +1750,35 @@ export function RecipesHomeContainer() {
             ? currentCollectionId
             : ALL_SAVED_COLLECTION_ID;
         });
+
+        if (res.allRecipesCount === 0) {
+          setRecipeSpotlight(null);
+          setIsSpotlightLoading(false);
+          return;
+        }
+
+        setIsSpotlightLoading(true);
+        const spotlight = await getRecipeSpotlightRequest({
+          signal: controller.signal
+        });
+
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setRecipeSpotlight(toRecipeSpotlight(spotlight));
       } catch (err) {
         if (isAbortError(err)) {
           return;
         }
+        setRecipeSpotlight(null);
         setSavedError(
           err instanceof Error ? err.message : ui.library.loadError
         );
       } finally {
         if (!controller.signal.aborted) {
           setIsCollectionsLoading(false);
+          setIsSpotlightLoading(false);
         }
       }
     })();
@@ -1761,6 +1859,14 @@ export function RecipesHomeContainer() {
         ? currentCollectionId
         : ALL_SAVED_COLLECTION_ID;
     });
+
+    if (res.allRecipesCount === 0) {
+      setRecipeSpotlight(null);
+      setIsSpotlightLoading(false);
+      return;
+    }
+
+    await refreshRecipeSpotlight(undefined, res.allRecipesCount);
   };
 
   const refreshSavedRecipes = async (
@@ -1773,6 +1879,39 @@ export function RecipesHomeContainer() {
     });
 
     setSavedRecipes(res.items.map(toRecipe));
+  };
+
+  const refreshRecipeSpotlight = async (
+    signal?: AbortSignal,
+    savedCount = allSavedRecipesCount
+  ) => {
+    if (savedCount === 0) {
+      setRecipeSpotlight(null);
+      setIsSpotlightLoading(false);
+      return;
+    }
+
+    setIsSpotlightLoading(true);
+
+    try {
+      const res = await getRecipeSpotlightRequest({ signal });
+
+      if (signal?.aborted) {
+        return;
+      }
+
+      setRecipeSpotlight(toRecipeSpotlight(res));
+    } catch (err) {
+      if (isAbortError(err)) {
+        return;
+      }
+
+      setRecipeSpotlight(null);
+    } finally {
+      if (!signal?.aborted) {
+        setIsSpotlightLoading(false);
+      }
+    }
   };
 
   const openCreateCollectionModal = () => {
@@ -1801,12 +1940,33 @@ export function RecipesHomeContainer() {
     setScreen("list");
   };
 
-  const openCollectionsModal = () => {
+  const openRecipeDetail = (
+    recipe: Recipe,
+    options?: { origin?: DetailOrigin }
+  ) => {
+    upsertRecipeCollections(recipe, { insertIntoBase: true });
+    setDetailOrigin(options?.origin ?? "library");
+    setSelectedRecipeId(recipe.id);
+    setScreen("detail");
+  };
+
+  const openCollectionsModal = (options?: {
+    preselectDefault?: boolean;
+    mode?: CollectionsModalMode;
+  }) => {
     if (!selectedRecipe) {
       return;
     }
 
-    setCollectionSelection(selectedRecipe.collectionIds);
+    const nextSelection =
+      selectedRecipe.collectionIds.length > 0
+        ? selectedRecipe.collectionIds
+        : options?.preselectDefault && defaultCollectionId
+          ? [defaultCollectionId]
+          : [];
+
+    setCollectionSelection(nextSelection);
+    setCollectionsModalMode(options?.mode ?? "manage");
     setCollectionError("");
     setShowCollectionsModal(true);
   };
@@ -1943,6 +2103,38 @@ export function RecipesHomeContainer() {
       );
     } finally {
       setIsUpdatingCollections(false);
+    }
+  };
+
+  const handleRemoveSavedRecipe = async () => {
+    if (!selectedRecipe) {
+      return;
+    }
+
+    const nextCollectionIds =
+      detailOrigin === "saved" &&
+      selectedSavedCollectionId !== ALL_SAVED_COLLECTION_ID &&
+      selectedRecipe.collectionIds.includes(selectedSavedCollectionId)
+        ? selectedRecipe.collectionIds.filter(
+            (collectionId) => collectionId !== selectedSavedCollectionId
+          )
+        : [];
+
+    try {
+      const updated = await setRecipeCollectionsRequest(selectedRecipe.id, {
+        collectionIds: nextCollectionIds
+      });
+      const nextRecipe = toRecipe(updated);
+
+      upsertRecipeCollections(nextRecipe);
+      await refreshCollections();
+      await refreshSavedRecipes();
+      setSelectedRecipeId(nextRecipe.id);
+      showToast(
+        nextRecipe.isSaved ? ui.actions.collectionsUpdated : ui.actions.unsaved
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : ui.actions.saveFailed);
     }
   };
 
@@ -2174,34 +2366,20 @@ export function RecipesHomeContainer() {
     }
   };
 
-  const handleToggleSave = async () => {
-    if (!selectedRecipe) return;
-    const next = !selectedRecipe.isSaved;
-    const optimisticRecipe = {
-      ...selectedRecipe,
-      isSaved: next,
-      collectionIds: next
-        ? selectedRecipe.collectionIds.length > 0
-          ? selectedRecipe.collectionIds
-          : defaultCollectionId
-            ? [defaultCollectionId]
-            : []
-        : []
-    };
-    // Optimistic update
-    upsertRecipeCollections(optimisticRecipe);
-    try {
-      const updated = await toggleSaveRecipeRequest(selectedRecipe.id, next);
-      const nextRecipe = toRecipe(updated);
-
-      upsertRecipeCollections(nextRecipe);
-      await refreshCollections();
-      await refreshSavedRecipes();
-      showToast(next ? ui.actions.savedOn : ui.actions.unsaved);
-    } catch {
-      // Rollback
-      upsertRecipeCollections(selectedRecipe);
+  const handleBookmarkPress = () => {
+    if (!selectedRecipe) {
+      return;
     }
+
+    if (selectedRecipe.isSaved) {
+      void handleRemoveSavedRecipe();
+      return;
+    }
+
+    openCollectionsModal({
+      preselectDefault: true,
+      mode: "save"
+    });
   };
 
   const openEdit = () => {
@@ -2370,7 +2548,9 @@ export function RecipesHomeContainer() {
                             setAuthConfirmPasswordError("");
                           }
                         }}
-                        aria-invalid={authConfirmPasswordError ? "true" : "false"}
+                        aria-invalid={
+                          authConfirmPasswordError ? "true" : "false"
+                        }
                         className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 pr-11 text-sm focus-visible:ring-1 focus-visible:ring-primary"
                       />
                       <button
@@ -2543,10 +2723,7 @@ export function RecipesHomeContainer() {
                       key={recipe.id}
                       type="button"
                       className="w-full overflow-hidden rounded-2xl border border-border/70 bg-card text-left transition active:scale-[0.98]"
-                      onClick={() => {
-                        setSelectedRecipeId(recipe.id);
-                        setScreen("detail");
-                      }}
+                      onClick={() => openRecipeDetail(recipe)}
                     >
                       <div className="relative h-[160px] w-full">
                         <RecipeThumbnail
@@ -2581,25 +2758,89 @@ export function RecipesHomeContainer() {
                   ))}
                 </div>
 
-                {/* Recipe Tip of the Day */}
-                <div className="mt-4 rounded-2xl border border-border/70 bg-card p-5">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">
-                    {ui.library.tipLabel}
-                  </p>
-                  <p className="mt-2 font-bold leading-snug">
-                    {ui.library.tipTitle}
-                  </p>
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                    {ui.library.tipBody}
-                  </p>
+                {!isSearchActive && isSpotlightLoading && (
+                  <SpotlightCardSkeleton />
+                )}
+                {!isSearchActive && recipeSpotlight && (
                   <button
                     type="button"
-                    className="mt-3 flex items-center gap-1.5 text-[11px] font-bold text-primary"
+                    className="mt-4 w-full overflow-hidden rounded-2xl border border-border/70 bg-card text-left transition active:scale-[0.98]"
+                    onClick={() => openRecipeDetail(recipeSpotlight.recipe)}
                   >
-                    <IcUtensils className="h-3.5 w-3.5" />
-                    {ui.library.tipCta}
+                    <div className="relative h-[168px] w-full">
+                      <RecipeThumbnail
+                        key={recipeSpotlight.recipe.sourceUrl}
+                        recipe={recipeSpotlight.recipe}
+                        alt={recipeSpotlight.recipe.title}
+                        className="h-full w-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/15" />
+                      <div className="absolute inset-x-4 top-4 flex items-start justify-between gap-3">
+                        <p className="inline-flex shrink-0 rounded-full bg-black/50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-white/90 backdrop-blur-sm">
+                          {recipeSpotlightLabel}
+                        </p>
+                        <SourceBadge
+                          language={language}
+                          sourceType={recipeSpotlight.recipe.sourceType}
+                          summarySource={recipeSpotlight.recipe.summarySource}
+                          overlay
+                        />
+                      </div>
+                      <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
+                        <p className="font-bold leading-snug">
+                          {recipeSpotlight.recipe.title}
+                        </p>
+                        <p className="mt-1 text-[11px] text-white/75">
+                          {toUpdatedAtLabel(
+                            recipeSpotlight.recipe.updatedAt,
+                            language
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-3 p-4">
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        {recipeSpotlightDescription}
+                      </p>
+                      {recipeSpotlight.stats && (
+                        <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold text-foreground">
+                          {recipeSpotlight.stats.viewCount !== null && (
+                            <span className="flex items-center gap-1.5">
+                              <IcEye className="h-3.5 w-3.5 text-primary" />
+                              {language === "ko"
+                                ? `${ui.library.spotlightViews} ${formatCompactCount(
+                                    recipeSpotlight.stats.viewCount,
+                                    language
+                                  )}`
+                                : `${formatCompactCount(
+                                    recipeSpotlight.stats.viewCount,
+                                    language
+                                  )} ${ui.library.spotlightViews}`}
+                            </span>
+                          )}
+                          {recipeSpotlight.stats.likeCount !== null && (
+                            <span className="flex items-center gap-1.5">
+                              <IcHeart className="h-3.5 w-3.5 text-primary" />
+                              {language === "ko"
+                                ? `${ui.library.spotlightLikes} ${formatCompactCount(
+                                    recipeSpotlight.stats.likeCount,
+                                    language
+                                  )}`
+                                : `${formatCompactCount(
+                                    recipeSpotlight.stats.likeCount,
+                                    language
+                                  )} ${ui.library.spotlightLikes}`}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <span className="flex items-center gap-1.5 text-[11px] font-bold text-primary">
+                        <IcUtensils className="h-3.5 w-3.5" />
+                        {ui.library.spotlightOpen}
+                      </span>
+                    </div>
                   </button>
-                </div>
+                )}
 
                 {/* AI Recipe Generator banner */}
                 <div className="mt-4 flex items-center justify-between overflow-hidden rounded-2xl bg-primary p-5">
@@ -3044,7 +3285,7 @@ export function RecipesHomeContainer() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void handleToggleSave()}
+                    onClick={handleBookmarkPress}
                     className={
                       selectedRecipe.isSaved
                         ? "text-primary"
@@ -3183,20 +3424,20 @@ export function RecipesHomeContainer() {
                 <Logo />
               </div>
               <div className="px-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h1 className="text-[32px] font-bold leading-tight">
+                <div className="space-y-4">
+                  <div className="max-w-[16rem]">
+                    <h1 className="text-[34px] font-bold leading-none tracking-tight">
                       {ui.saved.title}
                     </h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                       {ui.saved.subtitle}
                     </p>
                   </div>
-                  <div className="flex shrink-0 gap-2">
+                  <div className="grid grid-cols-[auto_1fr] gap-2">
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-11 rounded-xl px-3 font-bold"
+                      className="h-11 rounded-full px-4 font-bold"
                       onClick={() => {
                         setCollectionError("");
                         setShowEditCollectionsModal(true);
@@ -3206,8 +3447,7 @@ export function RecipesHomeContainer() {
                     </Button>
                     <Button
                       type="button"
-                      variant="outline"
-                      className="h-11 rounded-xl px-3 font-bold"
+                      className="h-11 rounded-full px-4 font-bold shadow-[0_10px_30px_-14px_hsl(var(--primary))]"
                       onClick={openCreateCollectionModal}
                     >
                       <IcPlus className="mr-2 h-4 w-4" />
@@ -3296,10 +3536,9 @@ export function RecipesHomeContainer() {
                         key={recipe.id}
                         type="button"
                         className="w-full overflow-hidden rounded-2xl border border-border/70 bg-card text-left transition active:scale-[0.98]"
-                        onClick={() => {
-                          setSelectedRecipeId(recipe.id);
-                          setScreen("detail");
-                        }}
+                        onClick={() =>
+                          openRecipeDetail(recipe, { origin: "saved" })
+                        }
                       >
                         <div className="relative h-[140px] w-full">
                           <RecipeThumbnail
@@ -3534,7 +3773,9 @@ export function RecipesHomeContainer() {
               {collections.filter((collection) => !collection.isDefault)
                 .length === 0 ? (
                 <div className="mt-5 rounded-2xl border border-border/70 bg-card px-4 py-5 text-center">
-                  <p className="font-semibold">{ui.saved.customCollectionsEmpty}</p>
+                  <p className="font-semibold">
+                    {ui.saved.customCollectionsEmpty}
+                  </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {ui.saved.customCollectionsEmptyDescription}
                   </p>
@@ -3566,7 +3807,9 @@ export function RecipesHomeContainer() {
                               type="button"
                               variant="outline"
                               className="h-9 rounded-lg px-3 text-xs font-bold"
-                              onClick={() => openRenameCollectionModal(collection)}
+                              onClick={() =>
+                                openRenameCollectionModal(collection)
+                              }
                             >
                               {ui.saved.renameCollection}
                             </Button>
@@ -3624,10 +3867,14 @@ export function RecipesHomeContainer() {
             <div className="w-full rounded-t-3xl border-x border-t border-border/70 bg-card p-6 pb-8">
               <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-muted" />
               <h2 className="text-lg font-bold">
-                {ui.saved.manageCollectionsTitle}
+                {collectionsModalMode === "save"
+                  ? ui.saved.saveToCollectionTitle
+                  : ui.saved.manageCollectionsTitle}
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                {ui.saved.manageCollectionsDescription}
+                {collectionsModalMode === "save"
+                  ? ui.saved.saveToCollectionDescription
+                  : ui.saved.manageCollectionsDescription}
               </p>
               <div className="mt-5 space-y-3">
                 {collections.map((collection) => {
@@ -3688,7 +3935,9 @@ export function RecipesHomeContainer() {
                   onClick={() => void handleSaveRecipeCollections()}
                   disabled={isUpdatingCollections}
                 >
-                  {ui.detail.collections}
+                  {collectionsModalMode === "save"
+                    ? ui.saved.saveToCollectionConfirm
+                    : ui.detail.collections}
                 </Button>
               </div>
             </div>

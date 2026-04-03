@@ -324,6 +324,46 @@ export async function listSavedRecipes(
   };
 }
 
+export async function listAllSavedRecipes(userId: string) {
+  const savedRecipes = await prisma.recipe.findMany({
+    where: {
+      userId,
+      deletedAt: null,
+      collectionItems: {
+        some: {
+          collection: {
+            userId
+          }
+        }
+      }
+    },
+    include: {
+      collectionItems: {
+        select: {
+          collectionId: true
+        }
+      }
+    },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }]
+  });
+
+  return savedRecipes.map((record) => ({
+    id: record.id,
+    userId: record.userId,
+    sourceUrl: record.sourceUrl,
+    sourceType: record.sourceType,
+    title: record.title,
+    ingredientsText: record.ingredientsText,
+    stepsText: record.stepsText,
+    summarySource: record.summarySource,
+    aiConfidence: record.aiConfidence,
+    isSaved: record.collectionItems.length > 0,
+    collectionIds: record.collectionItems.map((item) => item.collectionId),
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  }));
+}
+
 async function validateCollectionOwnership(
   userId: string,
   collectionIds: string[]

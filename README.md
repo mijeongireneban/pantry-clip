@@ -104,6 +104,7 @@ Recommended local environment variables:
 - `DATABASE_URL`
 - `GRAPHILE_WORKER_DATABASE_URL` for a dedicated worker connection
 - `OPENAI_API_KEY`
+- `YOUTUBE_DATA_API_KEY` for saved recipe popularity spotlight metrics
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 

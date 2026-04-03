@@ -5,6 +5,7 @@ import type {
   ListRecipesRequest,
   ListRecipesResponse,
   RecipeDto,
+  RecipeSpotlightResponse,
   SaveRecipeUrlRequest,
   SummarizeJobHandleResponse,
   SummarizeJobResultResponse,
@@ -124,6 +125,20 @@ export async function getRecipeById(id: string) {
   }
 
   return (await response.json()) as RecipeDto;
+}
+
+export async function getRecipeSpotlight(options?: { signal?: AbortSignal }) {
+  const response = await fetch("/api/recipes/spotlight", {
+    signal: options?.signal
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await toErrorMessage(response, "Failed to load recipe spotlight.")
+    );
+  }
+
+  return (await response.json()) as RecipeSpotlightResponse;
 }
 
 export async function updateRecipe(id: string, payload: UpdateRecipeRequest) {

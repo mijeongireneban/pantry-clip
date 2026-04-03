@@ -96,3 +96,19 @@ export type ListRecipesResponse = {
 export type DeleteRecipeResponse = {
   ok: true;
 };
+
+export type RecipeSpotlightSource =
+  | "youtube_popular"
+  | "saved_fallback"
+  | "none";
+
+export type RecipeSpotlightStatsDto = {
+  viewCount: number | null;
+  likeCount: number | null;
+};
+
+export type RecipeSpotlightResponse = {
+  recipe: RecipeDto | null;
+  source: RecipeSpotlightSource;
+  stats: RecipeSpotlightStatsDto | null;
+};
