@@ -987,7 +987,7 @@ function IngredientListEditor({
         <div key={i} className="flex items-center gap-2">
           <span className="text-sm font-bold text-primary">–</span>
           <input
-            className="h-10 flex-1 rounded-lg border border-border/70 bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            className="h-10 flex-1 rounded-lg border border-border/70 bg-card px-3 text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary md:text-sm"
             value={item}
             placeholder={replaceCount(editorCopy.ingredientPlaceholder, i + 1)}
             onChange={(e) => {
@@ -1057,7 +1057,7 @@ function StepListEditor({
             {i + 1}
           </span>
           <textarea
-            className="min-h-[60px] flex-1 resize-none rounded-lg border border-border/70 bg-card px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            className="min-h-[60px] flex-1 resize-none rounded-lg border border-border/70 bg-card px-3 py-2.5 text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary md:text-sm"
             value={step}
             placeholder={replaceCount(editorCopy.stepPlaceholder, i + 1)}
             rows={2}
@@ -2485,7 +2485,7 @@ export function RecipesHomeContainer() {
                       placeholder="example@email.com"
                       value={authEmail}
                       onChange={(e) => setAuthEmail(e.target.value)}
-                      className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 text-sm focus-visible:ring-1 focus-visible:ring-primary"
+                      className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 text-base focus-visible:ring-1 focus-visible:ring-primary md:text-sm"
                     />
                   </div>
                 </div>
@@ -2516,7 +2516,7 @@ export function RecipesHomeContainer() {
                           setAuthConfirmPasswordError("");
                         }
                       }}
-                      className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 pr-11 text-sm focus-visible:ring-1 focus-visible:ring-primary"
+                      className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 pr-11 text-base focus-visible:ring-1 focus-visible:ring-primary md:text-sm"
                     />
                     <button
                       type="button"
@@ -2551,7 +2551,7 @@ export function RecipesHomeContainer() {
                         aria-invalid={
                           authConfirmPasswordError ? "true" : "false"
                         }
-                        className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 pr-11 text-sm focus-visible:ring-1 focus-visible:ring-primary"
+                        className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 pr-11 text-base focus-visible:ring-1 focus-visible:ring-primary md:text-sm"
                       />
                       <button
                         type="button"
@@ -2664,7 +2664,7 @@ export function RecipesHomeContainer() {
                     placeholder={ui.library.searchPlaceholder}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="h-12 rounded-xl border border-border/70 bg-card pl-10 text-sm focus-visible:ring-1 focus-visible:ring-primary"
+                    className="h-12 rounded-xl border border-border/70 bg-card pl-10 text-base focus-visible:ring-1 focus-visible:ring-primary md:text-sm"
                   />
                 </div>
 
@@ -2902,7 +2902,7 @@ export function RecipesHomeContainer() {
                 <div className="mt-6">
                   <div className="relative">
                     <Input
-                      className="h-12 rounded-xl border border-border/70 bg-card pr-12 text-sm focus-visible:ring-1 focus-visible:ring-primary"
+                      className="h-12 rounded-xl border border-border/70 bg-card pr-12 text-base focus-visible:ring-1 focus-visible:ring-primary md:text-sm"
                       placeholder="https://youtube.com/shorts/..."
                       value={addUrl}
                       onChange={(e) => setAddUrl(e.target.value)}
@@ -2978,7 +2978,7 @@ export function RecipesHomeContainer() {
                       <div className="space-y-2">
                         <Label>{ui.add.titleLabel}</Label>
                         <input
-                          className="h-12 w-full rounded-xl border border-border/70 bg-card px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                          className="h-12 w-full rounded-xl border border-border/70 bg-card px-4 text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary md:text-sm"
                           value={draft.title}
                           onChange={(e) =>
                             setDraft((c) => ({ ...c, title: e.target.value }))
