@@ -23,14 +23,11 @@ function isObfuscatedDuplicateSignUp(user: User | null, session: Session | null)
     return false;
   }
 
-  const hasEmailIdentity = user.identities?.some(
-    (identity) => identity.provider === "email"
-  );
-  const hasEmailProvider = user.app_metadata?.provider === "email";
-
   // Supabase can return an obfuscated user object for existing confirmed accounts
   // instead of throwing "User already registered", depending on Auth settings.
-  return !hasEmailIdentity && !hasEmailProvider;
+  // In practice, the documented workaround is that the returned user has no
+  // linked identities in that duplicate-account path.
+  return (user.identities?.length ?? 0) === 0;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
