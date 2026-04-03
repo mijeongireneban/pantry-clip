@@ -3392,7 +3392,7 @@ export function RecipesHomeContainer() {
                     type="button"
                     variant="outline"
                     className="h-12 rounded-xl font-bold"
-                    onClick={openCollectionsModal}
+                    onClick={() => openCollectionsModal()}
                   >
                     {ui.detail.collections}
                   </Button>
