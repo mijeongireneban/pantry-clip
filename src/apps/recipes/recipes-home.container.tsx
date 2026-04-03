@@ -29,7 +29,7 @@ import { Button } from "@/src/components/ui/button";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import { Input } from "@/src/components/ui/input";
 import { Skeleton } from "@/src/components/ui/skeleton";
-import { ToggleGroup, ToggleGroupItem } from "@/src/components/ui/toggle-group";
+import { Switch } from "@/src/components/ui/switch";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -1402,12 +1402,6 @@ export function RecipesHomeContainer() {
     savedCollectionRecipes.length === 0 &&
     collections.length > 0;
 
-  const handleLanguageChange = (value: string) => {
-    if (value === "ko" || value === "en") {
-      setLanguage(value);
-    }
-  };
-
   const matchesSavedCollectionFilter = (recipe: Recipe) => {
     if (selectedSavedCollectionId === ALL_SAVED_COLLECTION_ID) {
       return recipe.isSaved;
@@ -2266,23 +2260,16 @@ export function RecipesHomeContainer() {
           {/* ══════════════════════════ AUTH ══════════════════════════ */}
           {screen === "auth" && (
             <div className="flex min-h-screen flex-col justify-center px-7 py-12">
-              <div className="mb-8 flex items-center justify-end gap-3">
-                <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                  {ui.auth.languageLabel}
-                </span>
-                <ToggleGroup
+              <div className="mb-8 flex justify-end">
+                <Switch
                   aria-label={ui.auth.languageLabel}
-                  type="single"
-                  value={language}
-                  onValueChange={handleLanguageChange}
+                  checked={language === "en"}
+                  onCheckedChange={(checked) =>
+                    setLanguage(checked ? "en" : "ko")
+                  }
                 >
-                  <ToggleGroupItem value="ko">
-                    {ui.auth.languageKorean}
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="en">
-                    {ui.auth.languageEnglish}
-                  </ToggleGroupItem>
-                </ToggleGroup>
+                  {language === "en" ? "E" : "K"}
+                </Switch>
               </div>
 
               {/* Logo + heading */}
