@@ -1,6 +1,6 @@
 "use client";
 
-import type { Session, User } from "@supabase/supabase-js";
+import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 
 import { getSupabaseBrowserClient } from "@/src/lib/auth/supabase-client";
@@ -9,14 +9,50 @@ type SignUpResult = "created" | "already_registered";
 
 type AuthContextValue = {
   isReady: boolean;
+  isRecoverySession: boolean;
   session: Session | null;
   userEmail: string | null;
   signInWithPassword: (email: string, password: string) => Promise<void>;
   signUpWithPassword: (email: string, password: string) => Promise<SignUpResult>;
+  requestPasswordReset: (email: string, redirectTo?: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+function hasRecoveryParams() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const searchParams = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+
+  return (
+    searchParams.get("type") === "recovery" ||
+    hashParams.get("type") === "recovery" ||
+    hashParams.has("access_token")
+  );
+}
+
+function stripRecoveryHash() {
+  if (typeof window === "undefined" || !window.location.hash) {
+    return;
+  }
+
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+
+  if (!hashParams.has("access_token") && hashParams.get("type") !== "recovery") {
+    return;
+  }
+
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${window.location.search}`
+  );
+}
 
 function isObfuscatedDuplicateSignUp(user: User | null, session: Session | null) {
   if (!user || session) {
@@ -32,10 +68,12 @@ function isObfuscatedDuplicateSignUp(user: User | null, session: Session | null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
+  const [isRecoverySession, setIsRecoverySession] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
+    const startedFromRecoveryLink = hasRecoveryParams();
 
     const bootstrapSession = async () => {
       try {
@@ -44,14 +82,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (error) {
           console.warn("Supabase session bootstrap failed; clearing local auth state.", error);
           await supabase.auth.signOut({ scope: "local" });
+          setIsRecoverySession(false);
           setSession(null);
           setIsReady(true);
           return;
         }
 
+        if (startedFromRecoveryLink && data.session) {
+          stripRecoveryHash();
+        }
+
+        setIsRecoverySession(startedFromRecoveryLink && Boolean(data.session));
         setSession(data.session);
       } catch (error) {
         console.warn("Unexpected auth bootstrap error; falling back to signed-out state.", error);
+        setIsRecoverySession(false);
         setSession(null);
       } finally {
         setIsReady(true);
@@ -62,7 +107,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription }
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, nextSession) => {
+      if (event === "PASSWORD_RECOVERY") {
+        stripRecoveryHash();
+        setIsRecoverySession(true);
+      } else if (!nextSession || event === "SIGNED_OUT") {
+        setIsRecoverySession(false);
+      }
+
       setSession(nextSession);
       setIsReady(true);
     });
@@ -73,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       isReady,
+      isRecoverySession,
       session,
       userEmail: session?.user.email ?? null,
       async signInWithPassword(email: string, password: string) {
@@ -101,6 +154,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         return "created";
       },
+      async requestPasswordReset(email: string, redirectTo?: string) {
+        const supabase = getSupabaseBrowserClient();
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo
+        });
+
+        if (error) {
+          throw error;
+        }
+      },
+      async updatePassword(password: string) {
+        const supabase = getSupabaseBrowserClient();
+        const { error } = await supabase.auth.updateUser({ password });
+
+        if (error) {
+          throw error;
+        }
+      },
       async signOut() {
         const supabase = getSupabaseBrowserClient();
         const { error } = await supabase.auth.signOut();
@@ -110,7 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     }),
-    [isReady, session]
+    [isReady, isRecoverySession, session]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

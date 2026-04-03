@@ -244,13 +244,20 @@ const copy = {
       languageEnglish: "English",
       welcomeBack: "다시 오신 것을 환영합니다",
       createAccount: "계정을 만들어보세요",
+      resetPasswordTitle: "비밀번호를 재설정하세요",
       signInDescription: "계정에 로그인하고 PantryClip을 계속 사용하세요.",
       signUpDescription: "짧은 요리 영상을 나만의 레시피로 저장해보세요.",
+      resetPasswordDescription:
+        "가입한 이메일을 입력하면 비밀번호 재설정 링크를 보내드릴게요.",
       email: "이메일",
       password: "비밀번호",
       confirmPassword: "비밀번호 확인",
       passwordMismatch: "비밀번호가 일치하지 않습니다.",
       forgotPassword: "비밀번호 찾기",
+      sendResetLink: "재설정 링크 보내기",
+      resetPasswordNotice:
+        "이 이메일로 가입된 계정이 있다면 비밀번호 재설정 링크를 보냈습니다.",
+      emailRequired: "이메일을 입력해주세요.",
       loading: "로딩 중...",
       login: "로그인",
       createAccountCta: "계정 만들기",
@@ -258,6 +265,7 @@ const copy = {
       socialComingSoon: "소셜 로그인은 곧 지원됩니다",
       dontHaveAccount: "계정이 없으신가요?",
       alreadyHaveAccount: "이미 계정이 있으신가요?",
+      rememberedPassword: "비밀번호가 생각나셨나요?",
       signUpSwitch: "회원가입",
       signInSwitch: "로그인",
       signUpNotice:
@@ -451,13 +459,20 @@ const copy = {
       languageEnglish: "English",
       welcomeBack: "Welcome back",
       createAccount: "Create account",
+      resetPasswordTitle: "Reset your password",
       signInDescription: "Sign in to continue using PantryClip.",
       signUpDescription: "Save short cooking videos as your own recipes.",
+      resetPasswordDescription:
+        "Enter your email and we'll send you a password reset link.",
       email: "Email",
       password: "Password",
       confirmPassword: "Confirm Password",
       passwordMismatch: "Passwords do not match.",
       forgotPassword: "Forgot Password?",
+      sendResetLink: "Send Reset Link",
+      resetPasswordNotice:
+        "If an account exists for this email, we sent a password reset link.",
+      emailRequired: "Please enter your email.",
       loading: "Loading...",
       login: "Login",
       createAccountCta: "Create Account",
@@ -465,6 +480,7 @@ const copy = {
       socialComingSoon: "Social login coming soon",
       dontHaveAccount: "Don't have an account?",
       alreadyHaveAccount: "Already have an account?",
+      rememberedPassword: "Remembered your password?",
       signUpSwitch: "Sign Up",
       signInSwitch: "Sign In",
       signUpNotice:
@@ -1363,8 +1379,14 @@ export function RecipesHomeContainer() {
   const RECIPES_PAGE_SIZE = 20;
   const SAVED_RECIPES_PAGE_SIZE = 50;
   const SEARCH_DEBOUNCE_MS = 250;
-  const { isReady, session, signInWithPassword, signOut, signUpWithPassword } =
-    useAuth();
+  const {
+    isReady,
+    session,
+    signInWithPassword,
+    signOut,
+    signUpWithPassword,
+    requestPasswordReset
+  } = useAuth();
   const { theme, setTheme } = useTheme();
   const [language, setLanguage] = useState<Language>("en");
   const [screen, setScreen] = useState<Screen>("auth");
@@ -1401,7 +1423,9 @@ export function RecipesHomeContainer() {
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
   const [authConfirmPasswordError, setAuthConfirmPasswordError] = useState("");
-  const [authMode, setAuthMode] = useState<"sign_in" | "sign_up">("sign_in");
+  const [authMode, setAuthMode] = useState<
+    "sign_in" | "sign_up" | "forgot_password"
+  >("sign_in");
   const [authBusy, setAuthBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [addUrl, setAddUrl] = useState("");
@@ -2143,6 +2167,13 @@ export function RecipesHomeContainer() {
     setAuthNotice("");
     setAuthConfirmPasswordError("");
 
+    const trimmedEmail = authEmail.trim();
+
+    if (!trimmedEmail) {
+      setAuthError(ui.auth.emailRequired);
+      return;
+    }
+
     if (authMode === "sign_up" && authPassword !== authConfirmPassword) {
       setAuthConfirmPasswordError(ui.auth.passwordMismatch);
       return;
@@ -2164,7 +2195,21 @@ export function RecipesHomeContainer() {
         setAuthConfirmPassword("");
         return;
       }
-      await signInWithPassword(authEmail.trim(), authPassword);
+
+      if (authMode === "forgot_password") {
+        const redirectTo =
+          typeof window === "undefined"
+            ? undefined
+            : new URL("/reset-password", window.location.origin).toString();
+
+        await requestPasswordReset(trimmedEmail, redirectTo);
+        setAuthNotice(ui.auth.resetPasswordNotice);
+        setAuthPassword("");
+        setAuthConfirmPassword("");
+        return;
+      }
+
+      await signInWithPassword(trimmedEmail, authPassword);
       setScreen("list");
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : ui.auth.authFailed);
@@ -2462,12 +2507,16 @@ export function RecipesHomeContainer() {
                   <h1 className="text-[28px] font-bold leading-tight">
                     {authMode === "sign_in"
                       ? ui.auth.welcomeBack
-                      : ui.auth.createAccount}
+                      : authMode === "sign_up"
+                        ? ui.auth.createAccount
+                        : ui.auth.resetPasswordTitle}
                   </h1>
                   <p className="mt-1.5 text-sm text-muted-foreground">
                     {authMode === "sign_in"
                       ? ui.auth.signInDescription
-                      : ui.auth.signUpDescription}
+                      : authMode === "sign_up"
+                        ? ui.auth.signUpDescription
+                        : ui.auth.resetPasswordDescription}
                   </p>
                 </div>
               </div>
@@ -2490,47 +2539,54 @@ export function RecipesHomeContainer() {
                   </div>
                 </div>
 
-                {/* Password field */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>{ui.auth.password}</Label>
-                    {authMode === "sign_in" && (
+                {authMode !== "forgot_password" && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>{ui.auth.password}</Label>
+                      {authMode === "sign_in" && (
+                        <button
+                          type="button"
+                          className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary"
+                          onClick={() => {
+                            setAuthMode("forgot_password");
+                            setAuthError("");
+                            setAuthNotice("");
+                            setAuthConfirmPasswordError("");
+                          }}
+                        >
+                          {ui.auth.forgotPassword}
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-4 flex items-center">
+                        <IcLock className="h-[18px] w-[18px] text-muted-foreground" />
+                      </div>
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        value={authPassword}
+                        onChange={(e) => {
+                          setAuthPassword(e.target.value);
+                          if (authConfirmPasswordError) {
+                            setAuthConfirmPasswordError("");
+                          }
+                        }}
+                        className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 pr-11 text-sm focus-visible:ring-1 focus-visible:ring-primary"
+                      />
                       <button
                         type="button"
-                        className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary"
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="absolute inset-y-0 right-4 flex items-center text-muted-foreground"
                       >
-                        {ui.auth.forgotPassword}
+                        {showPassword ? (
+                          <IcEyeOff className="h-[18px] w-[18px]" />
+                        ) : (
+                          <IcEye className="h-[18px] w-[18px]" />
+                        )}
                       </button>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <div className="pointer-events-none absolute inset-y-0 left-4 flex items-center">
-                      <IcLock className="h-[18px] w-[18px] text-muted-foreground" />
                     </div>
-                    <Input
-                      type={showPassword ? "text" : "password"}
-                      value={authPassword}
-                      onChange={(e) => {
-                        setAuthPassword(e.target.value);
-                        if (authConfirmPasswordError) {
-                          setAuthConfirmPasswordError("");
-                        }
-                      }}
-                      className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 pr-11 text-sm focus-visible:ring-1 focus-visible:ring-primary"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((v) => !v)}
-                      className="absolute inset-y-0 right-4 flex items-center text-muted-foreground"
-                    >
-                      {showPassword ? (
-                        <IcEyeOff className="h-[18px] w-[18px]" />
-                      ) : (
-                        <IcEye className="h-[18px] w-[18px]" />
-                      )}
-                    </button>
                   </div>
-                </div>
+                )}
 
                 {authMode === "sign_up" && (
                   <div className="space-y-2">
@@ -2591,31 +2647,44 @@ export function RecipesHomeContainer() {
                     ? ui.auth.loading
                     : authMode === "sign_in"
                       ? ui.auth.login
-                      : ui.auth.createAccountCta}
+                      : authMode === "sign_up"
+                        ? ui.auth.createAccountCta
+                        : ui.auth.sendResetLink}
                   {!authBusy && <IcArrow className="h-4 w-4" />}
                 </Button>
 
-                {/* TODO: Google and Apple social login */}
-                <Divider label={ui.auth.orContinueWith} />
-                <p className="text-center text-xs text-muted-foreground">
-                  {ui.auth.socialComingSoon}
-                </p>
+                {authMode !== "forgot_password" && (
+                  <>
+                    {/* TODO: Google and Apple social login */}
+                    <Divider label={ui.auth.orContinueWith} />
+                    <p className="text-center text-xs text-muted-foreground">
+                      {ui.auth.socialComingSoon}
+                    </p>
+                  </>
+                )}
 
                 <p className="pt-1 text-center text-sm text-muted-foreground">
                   {authMode === "sign_in"
                     ? `${ui.auth.dontHaveAccount} `
-                    : `${ui.auth.alreadyHaveAccount} `}
+                    : authMode === "sign_up"
+                      ? `${ui.auth.alreadyHaveAccount} `
+                      : `${ui.auth.rememberedPassword} `}
                   <button
                     type="button"
                     className="font-bold text-primary"
                     onClick={() => {
-                      setAuthMode((m) =>
-                        m === "sign_in" ? "sign_up" : "sign_in"
-                      );
+                      setAuthMode((currentMode) => {
+                        if (currentMode === "sign_in") {
+                          return "sign_up";
+                        }
+
+                        return "sign_in";
+                      });
+                      setAuthPassword("");
                       setAuthConfirmPassword("");
+                      setAuthConfirmPasswordError("");
                       setAuthError("");
                       setAuthNotice("");
-                      setAuthConfirmPasswordError("");
                     }}
                   >
                     {authMode === "sign_in"
