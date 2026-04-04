@@ -2660,28 +2660,6 @@ export function RecipesHomeContainer() {
                         )}
                       </button>
                     </div>
-                    <Input
-                      type={showPassword ? "text" : "password"}
-                      value={authPassword}
-                      onChange={(e) => {
-                        setAuthPassword(e.target.value);
-                        if (authConfirmPasswordError) {
-                          setAuthConfirmPasswordError("");
-                        }
-                      }}
-                      className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 pr-11 text-base focus-visible:ring-1 focus-visible:ring-primary md:text-sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((v) => !v)}
-                      className="absolute inset-y-0 right-4 flex items-center text-muted-foreground"
-                    >
-                      {showPassword ? (
-                        <IcEyeOff className="h-[18px] w-[18px]" />
-                      ) : (
-                        <IcEye className="h-[18px] w-[18px]" />
-                      )}
-                    </button>
                   </div>
                 )}
 
