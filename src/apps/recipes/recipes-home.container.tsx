@@ -29,6 +29,12 @@ import {
 } from "@/src/apis/recipes";
 import { useAuth } from "@/src/apps/app/auth.provider";
 import { useTheme } from "@/src/apps/app/theme.provider";
+import {
+  hasSeenHomeScreenOnboarding,
+  HomeScreenOnboarding,
+  isRunningStandaloneMode,
+  markHomeScreenOnboardingSeen
+} from "@/src/apps/onboarding/home-screen-onboarding";
 import { isYouTubeShortsUrl } from "@/src/apps/recipes/recipes.schemas";
 import { extractYouTubeVideoId } from "@/src/apps/recipes/recipes.utils";
 import { Button } from "@/src/components/ui/button";
@@ -45,6 +51,7 @@ type Language = "ko" | "en";
 // "add" now handles inline draft review. "review" is manual/write-text entry only.
 type Screen =
   | "auth"
+  | "onboarding"
   | "list"
   | "add"
   | "review"
@@ -409,6 +416,12 @@ const copy = {
       languageTitle: "앱 언어",
       languageDescription:
         "화면의 안내 문구와 버튼 텍스트를 한국어 또는 영어로 바꿀 수 있어요.",
+      homeScreenTitle: "홈 화면에서 바로 열기",
+      homeScreenDescription:
+        "PantryClip을 홈 화면에 추가하면 브라우저 탭을 찾지 않고 바로 열 수 있어요.",
+      homeScreenInstalled:
+        "PantryClip이 이미 홈 화면 앱처럼 실행되고 있어요.",
+      homeScreenButton: "추가 방법 보기",
       light: "라이트",
       dark: "다크",
       korean: "한국어",
@@ -625,6 +638,12 @@ const copy = {
       languageTitle: "App language",
       languageDescription:
         "Switch interface copy and buttons between Korean and English. Recipe content stays as originally generated or written.",
+      homeScreenTitle: "Open from your home screen",
+      homeScreenDescription:
+        "Add PantryClip to your home screen so you can launch it without hunting through browser tabs.",
+      homeScreenInstalled:
+        "PantryClip is already running like a home-screen app on this device.",
+      homeScreenButton: "View Instructions",
       light: "Light",
       dark: "Dark",
       korean: "Korean",
@@ -1003,7 +1022,7 @@ function IngredientListEditor({
         <div key={i} className="flex items-center gap-2">
           <span className="text-sm font-bold text-primary">–</span>
           <input
-            className="h-10 flex-1 rounded-lg border border-border/70 bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            className="h-10 flex-1 rounded-lg border border-border/70 bg-card px-3 text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary md:text-sm"
             value={item}
             placeholder={replaceCount(editorCopy.ingredientPlaceholder, i + 1)}
             onChange={(e) => {
@@ -1073,7 +1092,7 @@ function StepListEditor({
             {i + 1}
           </span>
           <textarea
-            className="min-h-[60px] flex-1 resize-none rounded-lg border border-border/70 bg-card px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            className="min-h-[60px] flex-1 resize-none rounded-lg border border-border/70 bg-card px-3 py-2.5 text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary md:text-sm"
             value={step}
             placeholder={replaceCount(editorCopy.stepPlaceholder, i + 1)}
             rows={2}
@@ -1410,6 +1429,12 @@ export function RecipesHomeContainer() {
   const [isSpotlightLoading, setIsSpotlightLoading] = useState(false);
   const [selectedRecipeId, setSelectedRecipeId] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [hasSeenOnboarding, setHasSeenOnboarding] = useState(true);
+  const [isOnboardingStateReady, setIsOnboardingStateReady] = useState(false);
+  const [isHomeScreenInstalled, setIsHomeScreenInstalled] = useState(false);
+  const [onboardingOrigin, setOnboardingOrigin] = useState<"gate" | "profile">(
+    "gate"
+  );
   const [showCreateCollectionModal, setShowCreateCollectionModal] =
     useState(false);
   const [showEditCollectionsModal, setShowEditCollectionsModal] =
@@ -1468,6 +1493,7 @@ export function RecipesHomeContainer() {
   const isSearchActive = normalizedSearchQuery.length > 0;
 
   const ui = copy[language];
+  const userEmail = session?.user.email ?? "";
   const savedCollectionRecipes = savedRecipes ?? [];
   const libraryRecipes = useMemo(
     () => (isSearchActive ? (searchResults ?? []) : recipes),
@@ -1634,13 +1660,48 @@ export function RecipesHomeContainer() {
   }, [SEARCH_DEBOUNCE_MS, searchQuery]);
 
   useEffect(() => {
-    if (!isReady) return;
+    if (!isReady) {
+      return;
+    }
+
+    if (!session || !userEmail) {
+      setHasSeenOnboarding(true);
+      setIsHomeScreenInstalled(false);
+      setIsOnboardingStateReady(true);
+      return;
+    }
+
+    const isInstalled = isRunningStandaloneMode();
+    setIsHomeScreenInstalled(isInstalled);
+
+    if (isInstalled) {
+      markHomeScreenOnboardingSeen(userEmail);
+      setHasSeenOnboarding(true);
+      setIsOnboardingStateReady(true);
+      return;
+    }
+
+    setHasSeenOnboarding(hasSeenHomeScreenOnboarding(userEmail));
+    setIsOnboardingStateReady(true);
+  }, [isReady, session, userEmail]);
+
+  useEffect(() => {
+    if (!isReady || !isOnboardingStateReady) return;
     if (session) {
-      setScreen((c) => (c === "auth" ? "list" : c));
+      if (screen === "auth") {
+        if (!hasSeenOnboarding) {
+          setOnboardingOrigin("gate");
+          setScreen("onboarding");
+          return;
+        }
+
+        setScreen("list");
+      }
+
       return;
     }
     setScreen("auth");
-  }, [isReady, session]);
+  }, [hasSeenOnboarding, isOnboardingStateReady, isReady, screen, session]);
 
   useEffect(() => {
     if (!isReady || !session) {
@@ -2020,6 +2081,20 @@ export function RecipesHomeContainer() {
       summarySource: "manual"
     });
     setDraftErrors({});
+  };
+
+  const openHomeScreenOnboarding = (origin: "gate" | "profile" = "gate") => {
+    setOnboardingOrigin(origin);
+    setScreen("onboarding");
+  };
+
+  const completeHomeScreenOnboarding = () => {
+    if (userEmail) {
+      markHomeScreenOnboardingSeen(userEmail);
+    }
+
+    setHasSeenOnboarding(true);
+    setScreen(onboardingOrigin === "profile" ? "profile" : "list");
   };
 
   const handleSubmitCollection = async () => {
@@ -2463,7 +2538,7 @@ export function RecipesHomeContainer() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
-  if (!isReady) {
+  if (!isReady || !isOnboardingStateReady) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-muted/60">
         <div className="flex flex-col items-center gap-3">
@@ -2534,7 +2609,7 @@ export function RecipesHomeContainer() {
                       placeholder="example@email.com"
                       value={authEmail}
                       onChange={(e) => setAuthEmail(e.target.value)}
-                      className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 text-sm focus-visible:ring-1 focus-visible:ring-primary"
+                      className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 text-base focus-visible:ring-1 focus-visible:ring-primary md:text-sm"
                     />
                   </div>
                 </div>
@@ -2585,6 +2660,28 @@ export function RecipesHomeContainer() {
                         )}
                       </button>
                     </div>
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      value={authPassword}
+                      onChange={(e) => {
+                        setAuthPassword(e.target.value);
+                        if (authConfirmPasswordError) {
+                          setAuthConfirmPasswordError("");
+                        }
+                      }}
+                      className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 pr-11 text-base focus-visible:ring-1 focus-visible:ring-primary md:text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute inset-y-0 right-4 flex items-center text-muted-foreground"
+                    >
+                      {showPassword ? (
+                        <IcEyeOff className="h-[18px] w-[18px]" />
+                      ) : (
+                        <IcEye className="h-[18px] w-[18px]" />
+                      )}
+                    </button>
                   </div>
                 )}
 
@@ -2607,7 +2704,7 @@ export function RecipesHomeContainer() {
                         aria-invalid={
                           authConfirmPasswordError ? "true" : "false"
                         }
-                        className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 pr-11 text-sm focus-visible:ring-1 focus-visible:ring-primary"
+                        className="h-[52px] rounded-xl border border-border/70 bg-card pl-11 pr-11 text-base focus-visible:ring-1 focus-visible:ring-primary md:text-sm"
                       />
                       <button
                         type="button"
@@ -2696,6 +2793,16 @@ export function RecipesHomeContainer() {
             </div>
           )}
 
+          {/* ══════════════════════════ ONBOARDING ══════════════════════════ */}
+          {screen === "onboarding" && (
+            <HomeScreenOnboarding
+              language={language}
+              mode={onboardingOrigin}
+              onDone={completeHomeScreenOnboarding}
+              onSkip={completeHomeScreenOnboarding}
+            />
+          )}
+
           {/* ══════════════════════════ LIBRARY ══════════════════════════ */}
           {screen === "list" && (
             <div className="pb-6">
@@ -2733,7 +2840,7 @@ export function RecipesHomeContainer() {
                     placeholder={ui.library.searchPlaceholder}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="h-12 rounded-xl border border-border/70 bg-card pl-10 text-sm focus-visible:ring-1 focus-visible:ring-primary"
+                    className="h-12 rounded-xl border border-border/70 bg-card pl-10 text-base focus-visible:ring-1 focus-visible:ring-primary md:text-sm"
                   />
                 </div>
 
@@ -2971,7 +3078,7 @@ export function RecipesHomeContainer() {
                 <div className="mt-6">
                   <div className="relative">
                     <Input
-                      className="h-12 rounded-xl border border-border/70 bg-card pr-12 text-sm focus-visible:ring-1 focus-visible:ring-primary"
+                      className="h-12 rounded-xl border border-border/70 bg-card pr-12 text-base focus-visible:ring-1 focus-visible:ring-primary md:text-sm"
                       placeholder="https://youtube.com/shorts/..."
                       value={addUrl}
                       onChange={(e) => setAddUrl(e.target.value)}
@@ -3047,7 +3154,7 @@ export function RecipesHomeContainer() {
                       <div className="space-y-2">
                         <Label>{ui.add.titleLabel}</Label>
                         <input
-                          className="h-12 w-full rounded-xl border border-border/70 bg-card px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                          className="h-12 w-full rounded-xl border border-border/70 bg-card px-4 text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary md:text-sm"
                           value={draft.title}
                           onChange={(e) =>
                             setDraft((c) => ({ ...c, title: e.target.value }))
@@ -3715,6 +3822,26 @@ export function RecipesHomeContainer() {
                     </Button>
                   </div>
                 </div>
+                <div className="mt-4 rounded-2xl border border-border/70 bg-card p-4">
+                  <p className="text-sm font-bold">
+                    {ui.profile.homeScreenTitle}
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {isHomeScreenInstalled
+                      ? ui.profile.homeScreenInstalled
+                      : ui.profile.homeScreenDescription}
+                  </p>
+                  {!isHomeScreenInstalled && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="mt-4 h-11 w-full rounded-xl font-bold"
+                      onClick={() => openHomeScreenOnboarding("profile")}
+                    >
+                      {ui.profile.homeScreenButton}
+                    </Button>
+                  )}
+                </div>
                 <Button
                   type="button"
                   variant="outline"
@@ -3730,7 +3857,7 @@ export function RecipesHomeContainer() {
         {/* end scroll area */}
 
         {/* ── Bottom Nav ── */}
-        {!!session && screen !== "auth" && (
+        {!!session && screen !== "auth" && screen !== "onboarding" && (
           <BottomNav
             activeTab={activeTab}
             language={language}
