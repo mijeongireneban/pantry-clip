@@ -2632,20 +2632,6 @@ export function RecipesHomeContainer() {
     }
   };
 
-  const handleRemoveAvatar = () => {
-    if (pendingAvatarPreviewUrl) {
-      URL.revokeObjectURL(pendingAvatarPreviewUrl);
-    }
-
-    setProfileError("");
-    setPendingAvatarFile(null);
-    setPendingAvatarPreviewUrl("");
-    setProfileForm((current) => ({
-      ...current,
-      avatarUrl: ""
-    }));
-  };
-
   const handleProfileSave = async () => {
     const nextError = validateProfileForm(profileForm, ui.profile);
 
@@ -4302,26 +4288,10 @@ export function RecipesHomeContainer() {
                         {replaceCount(ui.profile.recipesSaved, allSavedRecipesCount)}
                       </div>
                       <div className="mt-4 flex flex-wrap items-center gap-3">
-                        {(isAvatarProcessing || !hasCustomAvatar) && (
+                        {isAvatarProcessing && (
                           <p className="text-[11px] text-muted-foreground">
-                            {isAvatarProcessing
-                              ? ui.profile.avatarProcessing
-                              : ui.profile.avatarHint}
+                            {ui.profile.avatarProcessing}
                           </p>
-                        )}
-                        {hasCustomAvatar && (
-                          <button
-                            type="button"
-                            className="text-[11px] font-bold text-muted-foreground transition hover:text-foreground"
-                            disabled={
-                              isProfileLoading ||
-                              isProfileSaving ||
-                              isAvatarProcessing
-                            }
-                            onClick={handleRemoveAvatar}
-                          >
-                            {ui.profile.avatarRemove}
-                          </button>
                         )}
                       </div>
                       <input
