@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const usernamePattern = /^[a-z0-9._]{3,24}$/;
+const dataImagePattern = /^data:image\/(?:png|jpe?g|webp|gif);base64,/i;
 
 function isHttpUrl(value: string) {
   try {
@@ -9,6 +10,10 @@ function isHttpUrl(value: string) {
   } catch {
     return false;
   }
+}
+
+function isSupportedAvatarValue(value: string) {
+  return isHttpUrl(value) || dataImagePattern.test(value);
 }
 
 export const profileUsernameSchema = z
@@ -24,9 +29,9 @@ export const profileUsernameSchema = z
 export const profileAvatarUrlSchema = z
   .string()
   .trim()
-  .max(500)
-  .refine((value) => value === "" || isHttpUrl(value), {
-    message: "Enter a valid image URL starting with http:// or https://."
+  .max(400_000)
+  .refine((value) => value === "" || isSupportedAvatarValue(value), {
+    message: "Enter a valid image URL or upload an image file."
   });
 
 export const updateProfileSchema = z.object({

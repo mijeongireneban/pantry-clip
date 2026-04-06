@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ProfileDto } from "@/src/apis/@types/profile";
 import type { RecipeCollectionDto } from "@/src/apis/@types/recipe-collections";
@@ -114,6 +114,7 @@ type RecipeSpotlight = {
 type ProfileForm = {
   username: string;
   avatarUrl: string;
+  avatarUrlInput: string;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -245,6 +246,8 @@ function formatCompactCount(value: number, language: Language) {
 }
 
 const LANGUAGE_STORAGE_KEY = "pantryclip-language";
+const AVATAR_FILE_SIZE_LIMIT_BYTES = 5 * 1024 * 1024;
+const AVATAR_OUTPUT_SIZE_PX = 320;
 
 const copy = {
   ko: {
@@ -426,6 +429,17 @@ const copy = {
     profile: {
       recipesSaved: "저장된 레시피 {count}개",
       profileLoadError: "프로필을 불러오지 못했습니다.",
+      avatarTitle: "프로필 사진",
+      avatarDescription:
+        "사진 파일을 바로 올리거나 이미지 링크를 붙여넣을 수 있어요.",
+      avatarHint: "PNG, JPG, WEBP 또는 GIF, 최대 5MB",
+      avatarUpload: "사진 업로드",
+      avatarChange: "사진 변경",
+      avatarRemove: "사진 제거",
+      avatarProcessing: "사진 준비 중...",
+      avatarFileTooLarge: "5MB 이하의 이미지를 선택해주세요.",
+      avatarFileInvalid: "이미지 파일만 업로드할 수 있습니다.",
+      avatarProcessFailed: "이미지 파일을 처리하지 못했습니다. 다시 시도해주세요.",
       usernameLabel: "핸들",
       usernameDescription:
         "프로필에서 표시될 고유한 핸들을 설정하세요. 소문자, 숫자, 마침표, 밑줄을 사용할 수 있습니다.",
@@ -439,7 +453,7 @@ const copy = {
         "이미지 링크를 붙여넣으면 프로필 사진으로 사용할 수 있습니다.",
       avatarUrlPlaceholder: "https://example.com/avatar.jpg",
       avatarUrlInvalid:
-        "http:// 또는 https://로 시작하는 이미지 URL을 입력해주세요.",
+        "유효한 이미지 링크를 입력하거나 이미지 파일을 업로드해주세요.",
       saveProfile: "프로필 저장",
       savingProfile: "저장 중...",
       emailLabel: "이메일",
@@ -668,6 +682,18 @@ const copy = {
     profile: {
       recipesSaved: "{count} recipes saved",
       profileLoadError: "Failed to load profile.",
+      avatarTitle: "Profile photo",
+      avatarDescription:
+        "Upload an image file directly or paste an image link.",
+      avatarHint: "PNG, JPG, WEBP, or GIF up to 5MB",
+      avatarUpload: "Upload Photo",
+      avatarChange: "Change Photo",
+      avatarRemove: "Remove Photo",
+      avatarProcessing: "Preparing photo...",
+      avatarFileTooLarge: "Please choose an image up to 5MB.",
+      avatarFileInvalid: "Please choose an image file.",
+      avatarProcessFailed:
+        "We couldn't process that image. Please try another file.",
       usernameLabel: "Handle",
       usernameDescription:
         "Set the unique handle shown on your profile. Use lowercase letters, numbers, periods, or underscores.",
@@ -681,7 +707,7 @@ const copy = {
         "Paste an image link to use it as your profile photo.",
       avatarUrlPlaceholder: "https://example.com/avatar.jpg",
       avatarUrlInvalid:
-        "Please enter an image URL starting with http:// or https://.",
+        "Enter a valid image URL or upload an image file.",
       saveProfile: "Save Profile",
       savingProfile: "Saving...",
       emailLabel: "Email",
@@ -838,6 +864,75 @@ function getProfileInitials(label: string) {
   }
 
   return sanitized.slice(0, 2).toUpperCase();
+}
+
+function isHttpImageUrl(value: string) {
+  return /^https?:\/\//i.test(value.trim());
+}
+
+function getAvatarUrlInputValue(value: string | null | undefined) {
+  return value && isHttpImageUrl(value) ? value : "";
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Failed to read image."));
+    };
+
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read image."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImageFromUrl(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Failed to load image."));
+    image.src = src;
+  });
+}
+
+async function createAvatarDataUrl(file: File) {
+  const sourceUrl = await readFileAsDataUrl(file);
+  const image = await loadImageFromUrl(sourceUrl);
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("Canvas is not available.");
+  }
+
+  canvas.width = AVATAR_OUTPUT_SIZE_PX;
+  canvas.height = AVATAR_OUTPUT_SIZE_PX;
+
+  const cropSize = Math.min(image.naturalWidth, image.naturalHeight);
+  const cropX = (image.naturalWidth - cropSize) / 2;
+  const cropY = (image.naturalHeight - cropSize) / 2;
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(
+    image,
+    cropX,
+    cropY,
+    cropSize,
+    cropSize,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  return canvas.toDataURL("image/webp", 0.82);
 }
 
 function validateProfileForm(
@@ -1601,7 +1696,8 @@ export function RecipesHomeContainer() {
   const [profile, setProfile] = useState<ProfileDto | null>(null);
   const [profileForm, setProfileForm] = useState<ProfileForm>({
     username: "",
-    avatarUrl: ""
+    avatarUrl: "",
+    avatarUrlInput: ""
   });
   const [profileError, setProfileError] = useState("");
   const [selectedSavedCollectionId, setSelectedSavedCollectionId] =
@@ -1616,6 +1712,7 @@ export function RecipesHomeContainer() {
   const [isSpotlightLoading, setIsSpotlightLoading] = useState(false);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [isProfileSaving, setIsProfileSaving] = useState(false);
+  const [isAvatarProcessing, setIsAvatarProcessing] = useState(false);
   const [selectedRecipeId, setSelectedRecipeId] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState(true);
@@ -1667,6 +1764,7 @@ export function RecipesHomeContainer() {
     Partial<Record<keyof RecipeDraft, string>>
   >({});
   const [toastMessage, setToastMessage] = useState("");
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
   const [draft, setDraft] = useState<RecipeDraft>({
     sourceUrl: "",
     sourceType: "other",
@@ -1698,9 +1796,22 @@ export function RecipesHomeContainer() {
     () => getProfileImageUrl(profile, sessionMetadata),
     [profile, sessionMetadata]
   );
+  const normalizedProfileUsername = profileForm.username.trim().toLowerCase();
+  const normalizedProfileAvatarUrl = profileForm.avatarUrl.trim();
+  const hasValidPreviewAvatar =
+    normalizedProfileAvatarUrl.length > 0 &&
+    profileAvatarUrlSchema.safeParse(normalizedProfileAvatarUrl).success;
+  const previewProfileHeadline =
+    normalizedProfileUsername &&
+    profileUsernameSchema.safeParse(normalizedProfileUsername).success
+      ? `@${normalizedProfileUsername}`
+      : profileHeadline;
+  const previewProfileImageUrl = hasValidPreviewAvatar
+    ? normalizedProfileAvatarUrl
+    : profileImageUrl;
   const profileInitials = useMemo(
-    () => getProfileInitials(profileHeadline),
-    [profileHeadline]
+    () => getProfileInitials(previewProfileHeadline),
+    [previewProfileHeadline]
   );
   const savedCollectionRecipes = savedRecipes ?? [];
   const libraryRecipes = useMemo(
@@ -1734,11 +1845,10 @@ export function RecipesHomeContainer() {
     !savedError &&
     savedCollectionRecipes.length === 0 &&
     collections.length > 0;
-  const normalizedProfileUsername = profileForm.username.trim().toLowerCase();
-  const normalizedProfileAvatarUrl = profileForm.avatarUrl.trim();
   const isProfileDirty =
     normalizedProfileUsername !== (profile?.username ?? "") ||
     normalizedProfileAvatarUrl !== (profile?.avatarUrl ?? "");
+  const hasCustomAvatar = Boolean(normalizedProfileAvatarUrl);
 
   const matchesSavedCollectionFilter = (recipe: Recipe) => {
     if (selectedSavedCollectionId === ALL_SAVED_COLLECTION_ID) {
@@ -1921,11 +2031,13 @@ export function RecipesHomeContainer() {
       setProfile(null);
       setProfileForm({
         username: suggestedUsername,
-        avatarUrl: ""
+        avatarUrl: "",
+        avatarUrlInput: ""
       });
       setProfileError("");
       setIsProfileLoading(false);
       setIsProfileSaving(false);
+      setIsAvatarProcessing(false);
       setRecipes([]);
       setSearchResults(null);
       setCollections([]);
@@ -2002,10 +2114,8 @@ export function RecipesHomeContainer() {
         setProfile(nextProfile);
         setProfileForm({
           username: nextProfile.username ?? suggestedUsername,
-          avatarUrl:
-            nextProfile.avatarUrl ??
-            getProfileImageUrl(nextProfile, sessionMetadata) ??
-            ""
+          avatarUrl: nextProfile.avatarUrl ?? "",
+          avatarUrlInput: getAvatarUrlInputValue(nextProfile.avatarUrl)
         });
       } catch (err) {
         if (isAbortError(err)) {
@@ -2015,7 +2125,8 @@ export function RecipesHomeContainer() {
         setProfile(null);
         setProfileForm({
           username: suggestedUsername,
-          avatarUrl: getProfileImageUrl(null, sessionMetadata) ?? ""
+          avatarUrl: "",
+          avatarUrlInput: ""
         });
         setProfileError(
           err instanceof Error ? err.message : ui.profile.profileLoadError
@@ -2031,7 +2142,6 @@ export function RecipesHomeContainer() {
   }, [
     isReady,
     session,
-    sessionMetadata,
     suggestedUsername,
     ui.profile.profileLoadError
   ]);
@@ -2457,6 +2567,52 @@ export function RecipesHomeContainer() {
     }
   };
 
+  const handleAvatarFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    event.target.value = "";
+
+    if (!file.type.startsWith("image/")) {
+      setProfileError(ui.profile.avatarFileInvalid);
+      return;
+    }
+
+    if (file.size > AVATAR_FILE_SIZE_LIMIT_BYTES) {
+      setProfileError(ui.profile.avatarFileTooLarge);
+      return;
+    }
+
+    setProfileError("");
+    setIsAvatarProcessing(true);
+
+    try {
+      const nextAvatarUrl = await createAvatarDataUrl(file);
+
+      setProfileForm((current) => ({
+        ...current,
+        avatarUrl: nextAvatarUrl,
+        avatarUrlInput: ""
+      }));
+    } catch {
+      setProfileError(ui.profile.avatarProcessFailed);
+    } finally {
+      setIsAvatarProcessing(false);
+    }
+  };
+
+  const handleRemoveAvatar = () => {
+    setProfileError("");
+    setProfileForm((current) => ({
+      ...current,
+      avatarUrl: "",
+      avatarUrlInput: ""
+    }));
+  };
+
   const handleProfileSave = async () => {
     const nextError = validateProfileForm(profileForm, ui.profile);
 
@@ -2477,7 +2633,8 @@ export function RecipesHomeContainer() {
       setProfile(updated);
       setProfileForm({
         username: updated.username ?? "",
-        avatarUrl: updated.avatarUrl ?? ""
+        avatarUrl: updated.avatarUrl ?? "",
+        avatarUrlInput: getAvatarUrlInputValue(updated.avatarUrl)
       });
       showToast(ui.actions.profileUpdated);
     } catch (err) {
@@ -4051,121 +4208,195 @@ export function RecipesHomeContainer() {
                 <Logo />
               </div>
               <div className="px-5">
-                <div className="flex flex-col items-center py-10">
-                  <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-border/70 bg-card">
-                    {profileImageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={profileImageUrl}
-                        alt={profileHeadline}
-                        className="h-full w-full object-cover"
+                <div className="relative overflow-hidden rounded-[28px] border border-primary/20 bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.18),transparent_42%),linear-gradient(180deg,hsl(var(--card)),color-mix(in_oklch,hsl(var(--card))_88%,hsl(var(--primary))_12%))] p-5 shadow-[0_24px_80px_-44px_hsl(var(--primary))]">
+                  <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
+                  <div className="flex items-start gap-4">
+                    <div className="relative">
+                      <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[26px] border border-white/10 bg-background/80 shadow-[0_18px_38px_-22px_rgba(0,0,0,0.65)]">
+                        {previewProfileImageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={previewProfileImageUrl}
+                            alt={previewProfileHeadline}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : profileInitials ? (
+                          <span className="text-2xl font-black tracking-tight">
+                            {profileInitials}
+                          </span>
+                        ) : (
+                          <IcUser className="h-10 w-10 text-muted-foreground" />
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="absolute -bottom-2 -right-2 rounded-full border border-primary/30 bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground shadow-[0_12px_24px_-16px_hsl(var(--primary))]"
+                        disabled={
+                          isProfileLoading || isProfileSaving || isAvatarProcessing
+                        }
+                        onClick={() => avatarFileInputRef.current?.click()}
+                      >
+                        {hasCustomAvatar
+                          ? ui.profile.avatarChange
+                          : ui.profile.avatarUpload}
+                      </button>
+                      <input
+                        ref={avatarFileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="hidden"
+                        disabled={
+                          isProfileLoading || isProfileSaving || isAvatarProcessing
+                        }
+                        onChange={(event) => void handleAvatarFileChange(event)}
                       />
-                    ) : profileInitials ? (
-                      <span className="text-xl font-black tracking-tight">
-                        {profileInitials}
-                      </span>
-                    ) : (
-                      <IcUser className="h-9 w-9 text-muted-foreground" />
-                    )}
+                    </div>
+                    <div className="min-w-0 flex-1 pt-1">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary/80">
+                        {ui.profile.avatarTitle}
+                      </p>
+                      <h2 className="mt-2 truncate text-2xl font-black tracking-tight">
+                        {previewProfileHeadline}
+                      </h2>
+                      <p className="mt-1 truncate text-sm text-muted-foreground">
+                        {userEmail}
+                      </p>
+                      <div className="mt-4 inline-flex rounded-full border border-white/10 bg-background/70 px-3 py-1.5 text-xs font-bold text-foreground/90">
+                        {replaceCount(ui.profile.recipesSaved, allSavedRecipesCount)}
+                      </div>
+                    </div>
                   </div>
-                  <p className="mt-4 font-bold">{profileHeadline}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {userEmail}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {replaceCount(
-                      ui.profile.recipesSaved,
-                      allSavedRecipesCount
-                    )}
-                  </p>
-                </div>
-                <div className="mt-4 rounded-2xl border border-border/70 bg-card p-4">
-                  <p className="text-sm font-bold">{ui.profile.usernameLabel}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {ui.profile.usernameDescription}
-                  </p>
-                  <div className="mt-4 space-y-4">
-                    <div>
-                      <FormLabel htmlFor="profile-username">
-                        {ui.profile.usernameLabel}
-                      </FormLabel>
-                      <div className="mt-2 flex items-center rounded-xl border border-border/70 bg-background px-3">
-                        <span className="text-sm text-muted-foreground">@</span>
+                  <div className="mt-5 rounded-[22px] border border-white/10 bg-background/55 p-4 backdrop-blur-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold">{ui.profile.avatarTitle}</p>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {ui.profile.avatarDescription}
+                        </p>
+                        <p className="mt-2 text-[11px] text-muted-foreground">
+                          {isAvatarProcessing
+                            ? ui.profile.avatarProcessing
+                            : ui.profile.avatarHint}
+                        </p>
+                      </div>
+                      {hasCustomAvatar && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 rounded-full px-3 text-xs font-bold"
+                          disabled={
+                            isProfileLoading ||
+                            isProfileSaving ||
+                            isAvatarProcessing
+                          }
+                          onClick={handleRemoveAvatar}
+                        >
+                          {ui.profile.avatarRemove}
+                        </Button>
+                      )}
+                    </div>
+                    <div className="mt-5 grid gap-4">
+                      <div>
+                        <FormLabel htmlFor="profile-username">
+                          {ui.profile.usernameLabel}
+                        </FormLabel>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {ui.profile.usernameDescription}
+                        </p>
+                        <div className="mt-2 flex items-center rounded-2xl border border-white/10 bg-background/85 px-4 shadow-inner">
+                          <span className="text-sm font-bold text-primary">@</span>
+                          <Input
+                            id="profile-username"
+                            value={profileForm.username}
+                            placeholder={ui.profile.usernamePlaceholder}
+                            className="h-12 border-0 bg-transparent px-2 shadow-none focus-visible:ring-0"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            disabled={
+                              isProfileLoading ||
+                              isProfileSaving ||
+                              isAvatarProcessing
+                            }
+                            onChange={(event) => {
+                              setProfileError("");
+                              setProfileForm((current) => ({
+                                ...current,
+                                username: event.target.value.toLowerCase()
+                              }));
+                            }}
+                          />
+                        </div>
+                        <p className="mt-2 text-[11px] text-muted-foreground">
+                          {ui.profile.usernameHint}
+                        </p>
+                      </div>
+                      <div>
+                        <FormLabel htmlFor="profile-avatar-url">
+                          {ui.profile.avatarUrlLabel}
+                        </FormLabel>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {ui.profile.avatarUrlDescription}
+                        </p>
                         <Input
-                          id="profile-username"
-                          value={profileForm.username}
-                          placeholder={ui.profile.usernamePlaceholder}
-                          className="border-0 bg-transparent px-2 shadow-none focus-visible:ring-0"
+                          id="profile-avatar-url"
+                          value={profileForm.avatarUrlInput}
+                          placeholder={ui.profile.avatarUrlPlaceholder}
+                          className="mt-2 h-12 rounded-2xl border-white/10 bg-background/85"
+                          inputMode="url"
                           autoCapitalize="none"
                           autoCorrect="off"
                           spellCheck={false}
-                          disabled={isProfileLoading || isProfileSaving}
+                          disabled={
+                            isProfileLoading ||
+                            isProfileSaving ||
+                            isAvatarProcessing
+                          }
                           onChange={(event) => {
+                            const nextAvatarUrl = event.target.value;
+
                             setProfileError("");
                             setProfileForm((current) => ({
                               ...current,
-                              username: event.target.value.toLowerCase()
+                              avatarUrl: nextAvatarUrl,
+                              avatarUrlInput: nextAvatarUrl
                             }));
                           }}
                         />
                       </div>
-                      <p className="mt-2 text-[11px] text-muted-foreground">
-                        {ui.profile.usernameHint}
-                      </p>
-                    </div>
-                    <div>
-                      <FormLabel htmlFor="profile-avatar-url">
-                        {ui.profile.avatarUrlLabel}
-                      </FormLabel>
-                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        {ui.profile.avatarUrlDescription}
-                      </p>
-                      <Input
-                        id="profile-avatar-url"
-                        value={profileForm.avatarUrl}
-                        placeholder={ui.profile.avatarUrlPlaceholder}
-                        className="mt-2 h-11 rounded-xl"
-                        inputMode="url"
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        disabled={isProfileLoading || isProfileSaving}
-                        onChange={(event) => {
-                          setProfileError("");
-                          setProfileForm((current) => ({
-                            ...current,
-                            avatarUrl: event.target.value
-                          }));
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <Label>{ui.profile.emailLabel}</Label>
-                      <p className="mt-2 rounded-xl border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
-                        {userEmail}
-                      </p>
+                      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                        <div>
+                          <Label>{ui.profile.emailLabel}</Label>
+                          <p className="mt-2 rounded-2xl border border-white/10 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+                            {userEmail}
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          className="h-12 rounded-2xl px-6 font-bold shadow-[0_18px_44px_-24px_hsl(var(--primary))]"
+                          disabled={
+                            isProfileLoading ||
+                            isProfileSaving ||
+                            isAvatarProcessing ||
+                            !profileForm.username.trim() ||
+                            !isProfileDirty
+                          }
+                          onClick={() => void handleProfileSave()}
+                        >
+                          {isProfileSaving
+                            ? ui.profile.savingProfile
+                            : ui.profile.saveProfile}
+                        </Button>
+                      </div>
                     </div>
                     {profileError && (
-                      <p className="text-sm text-destructive">{profileError}</p>
+                      <p className="mt-4 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                        {profileError}
+                      </p>
                     )}
-                    <Button
-                      type="button"
-                      className="h-11 w-full rounded-xl font-bold"
-                      disabled={
-                        isProfileLoading ||
-                        isProfileSaving ||
-                        !profileForm.username.trim() ||
-                        !isProfileDirty
-                      }
-                      onClick={() => void handleProfileSave()}
-                    >
-                      {isProfileSaving
-                        ? ui.profile.savingProfile
-                        : ui.profile.saveProfile}
-                    </Button>
                   </div>
                 </div>
-                <div className="rounded-2xl border border-border/70 bg-card p-4">
+                <div className="mt-4 rounded-2xl border border-border/70 bg-card p-4">
                   <p className="text-sm font-bold">{ui.profile.themeTitle}</p>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                     {ui.profile.themeDescription}
