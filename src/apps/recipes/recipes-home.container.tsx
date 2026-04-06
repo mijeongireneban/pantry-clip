@@ -114,7 +114,6 @@ type RecipeSpotlight = {
 type ProfileForm = {
   username: string;
   avatarUrl: string;
-  avatarUrlInput: string;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -448,10 +447,6 @@ const copy = {
       usernameRequired: "핸들을 입력해주세요.",
       usernameInvalid:
         "핸들은 3-24자의 소문자, 숫자, 마침표, 밑줄만 사용할 수 있습니다.",
-      avatarUrlLabel: "프로필 사진 URL",
-      avatarUrlDescription:
-        "이미지 링크를 붙여넣으면 프로필 사진으로 사용할 수 있습니다.",
-      avatarUrlPlaceholder: "https://example.com/avatar.jpg",
       avatarUrlInvalid:
         "유효한 이미지 링크를 입력하거나 이미지 파일을 업로드해주세요.",
       saveProfile: "프로필 저장",
@@ -702,10 +697,6 @@ const copy = {
       usernameRequired: "Please enter a handle.",
       usernameInvalid:
         "Use 3-24 lowercase letters, numbers, periods, or underscores.",
-      avatarUrlLabel: "Profile photo URL",
-      avatarUrlDescription:
-        "Paste an image link to use it as your profile photo.",
-      avatarUrlPlaceholder: "https://example.com/avatar.jpg",
       avatarUrlInvalid:
         "Enter a valid image URL or upload an image file.",
       saveProfile: "Save Profile",
@@ -864,14 +855,6 @@ function getProfileInitials(label: string) {
   }
 
   return sanitized.slice(0, 2).toUpperCase();
-}
-
-function isHttpImageUrl(value: string) {
-  return /^https?:\/\//i.test(value.trim());
-}
-
-function getAvatarUrlInputValue(value: string | null | undefined) {
-  return value && isHttpImageUrl(value) ? value : "";
 }
 
 function readFileAsDataUrl(file: File) {
@@ -1130,6 +1113,20 @@ const IcPlus = ({ className }: { className?: string }) => (
   >
     <line x1="12" y1="5" x2="12" y2="19" />
     <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
+const IcEdit = ({ className }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z" />
   </svg>
 );
 const IcUser = ({ className }: { className?: string }) => (
@@ -1709,8 +1706,7 @@ export function RecipesHomeContainer() {
   const [profile, setProfile] = useState<ProfileDto | null>(null);
   const [profileForm, setProfileForm] = useState<ProfileForm>({
     username: "",
-    avatarUrl: "",
-    avatarUrlInput: ""
+    avatarUrl: ""
   });
   const [profileError, setProfileError] = useState("");
   const [selectedSavedCollectionId, setSelectedSavedCollectionId] =
@@ -2060,8 +2056,7 @@ export function RecipesHomeContainer() {
       setPendingAvatarPreviewUrl("");
       setProfileForm({
         username: suggestedUsername,
-        avatarUrl: "",
-        avatarUrlInput: ""
+        avatarUrl: ""
       });
       setProfileError("");
       setIsProfileLoading(false);
@@ -2150,8 +2145,7 @@ export function RecipesHomeContainer() {
         setProfile(nextProfile);
         setProfileForm({
           username: nextProfile.username ?? suggestedUsername,
-          avatarUrl: nextProfile.avatarUrl ?? "",
-          avatarUrlInput: getAvatarUrlInputValue(nextProfile.avatarUrl)
+          avatarUrl: nextProfile.avatarUrl ?? ""
         });
       } catch (err) {
         if (isAbortError(err)) {
@@ -2167,8 +2161,7 @@ export function RecipesHomeContainer() {
         setProfile(null);
         setProfileForm({
           username: suggestedUsername,
-          avatarUrl: "",
-          avatarUrlInput: ""
+          avatarUrl: ""
         });
         setProfileError(
           err instanceof Error ? err.message : ui.profile.profileLoadError
@@ -2643,8 +2636,7 @@ export function RecipesHomeContainer() {
       setPendingAvatarPreviewUrl(nextPreviewUrl);
       setProfileForm((current) => ({
         ...current,
-        avatarUrl: "",
-        avatarUrlInput: ""
+        avatarUrl: ""
       }));
     } catch {
       setProfileError(ui.profile.avatarProcessFailed);
@@ -2663,8 +2655,7 @@ export function RecipesHomeContainer() {
     setPendingAvatarPreviewUrl("");
     setProfileForm((current) => ({
       ...current,
-      avatarUrl: "",
-      avatarUrlInput: ""
+      avatarUrl: ""
     }));
   };
 
@@ -2707,8 +2698,7 @@ export function RecipesHomeContainer() {
       setProfile(updated);
       setProfileForm({
         username: updated.username ?? "",
-        avatarUrl: updated.avatarUrl ?? "",
-        avatarUrlInput: getAvatarUrlInputValue(updated.avatarUrl)
+        avatarUrl: updated.avatarUrl ?? ""
       });
       showToast(ui.actions.profileUpdated);
     } catch (err) {
@@ -4285,21 +4275,34 @@ export function RecipesHomeContainer() {
                 <div className="relative overflow-hidden rounded-[28px] border border-primary/20 bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.18),transparent_42%),linear-gradient(180deg,hsl(var(--card)),color-mix(in_oklch,hsl(var(--card))_88%,hsl(var(--primary))_12%))] p-5 shadow-[0_24px_80px_-44px_hsl(var(--primary))]">
                   <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
                   <div className="flex items-start gap-4">
-                    <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center overflow-hidden rounded-[26px] border border-white/10 bg-background/80 shadow-[0_18px_38px_-22px_rgba(0,0,0,0.65)]">
-                      {previewProfileImageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={previewProfileImageUrl}
-                          alt={previewProfileHeadline}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : profileInitials ? (
-                        <span className="text-2xl font-black tracking-tight">
-                          {profileInitials}
-                        </span>
-                      ) : (
-                        <IcUser className="h-10 w-10 text-muted-foreground" />
-                      )}
+                    <div className="relative flex-shrink-0">
+                      <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[26px] border border-white/10 bg-background/80 shadow-[0_18px_38px_-22px_rgba(0,0,0,0.65)]">
+                        {previewProfileImageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={previewProfileImageUrl}
+                            alt={previewProfileHeadline}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : profileInitials ? (
+                          <span className="text-2xl font-black tracking-tight">
+                            {profileInitials}
+                          </span>
+                        ) : (
+                          <IcUser className="h-10 w-10 text-muted-foreground" />
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        aria-label={hasCustomAvatar ? ui.profile.avatarChange : ui.profile.avatarUpload}
+                        className="absolute -bottom-2 -right-2 flex h-9 w-9 items-center justify-center rounded-full border border-primary/30 bg-primary text-primary-foreground shadow-[0_16px_30px_-18px_hsl(var(--primary))]"
+                        disabled={
+                          isProfileLoading || isProfileSaving || isAvatarProcessing
+                        }
+                        onClick={() => avatarFileInputRef.current?.click()}
+                      >
+                        <IcEdit className="h-4 w-4" />
+                      </button>
                     </div>
                     <div className="min-w-0 flex-1 pt-1">
                       <h2 className="truncate text-2xl font-black tracking-tight">
@@ -4311,24 +4314,18 @@ export function RecipesHomeContainer() {
                       <div className="mt-4 inline-flex rounded-full border border-white/10 bg-background/70 px-3 py-1.5 text-xs font-bold text-foreground/90">
                         {replaceCount(ui.profile.recipesSaved, allSavedRecipesCount)}
                       </div>
-                      <div className="mt-4 flex flex-wrap items-center gap-2">
-                        <Button
-                          type="button"
-                          className="h-9 rounded-full px-4 text-xs font-bold"
-                          disabled={
-                            isProfileLoading || isProfileSaving || isAvatarProcessing
-                          }
-                          onClick={() => avatarFileInputRef.current?.click()}
-                        >
-                          {hasCustomAvatar
-                            ? ui.profile.avatarChange
-                            : ui.profile.avatarUpload}
-                        </Button>
+                      <div className="mt-4 flex flex-wrap items-center gap-3">
+                        {(isAvatarProcessing || !hasCustomAvatar) && (
+                          <p className="text-[11px] text-muted-foreground">
+                            {isAvatarProcessing
+                              ? ui.profile.avatarProcessing
+                              : ui.profile.avatarHint}
+                          </p>
+                        )}
                         {hasCustomAvatar && (
-                          <Button
+                          <button
                             type="button"
-                            variant="outline"
-                            className="h-9 rounded-full px-4 text-xs font-bold"
+                            className="text-[11px] font-bold text-muted-foreground transition hover:text-foreground"
                             disabled={
                               isProfileLoading ||
                               isProfileSaving ||
@@ -4337,16 +4334,9 @@ export function RecipesHomeContainer() {
                             onClick={handleRemoveAvatar}
                           >
                             {ui.profile.avatarRemove}
-                          </Button>
+                          </button>
                         )}
                       </div>
-                      {(isAvatarProcessing || !hasCustomAvatar) && (
-                        <p className="mt-3 text-[11px] text-muted-foreground">
-                          {isAvatarProcessing
-                            ? ui.profile.avatarProcessing
-                            : ui.profile.avatarHint}
-                        </p>
-                      )}
                       <input
                         ref={avatarFileInputRef}
                         type="file"
@@ -4392,42 +4382,6 @@ export function RecipesHomeContainer() {
                         <p className="mt-2 text-[11px] text-muted-foreground">
                           {ui.profile.usernameHint}
                         </p>
-                      </div>
-                      <div>
-                        <FormLabel htmlFor="profile-avatar-url">
-                          {ui.profile.avatarUrlLabel}
-                        </FormLabel>
-                        <Input
-                          id="profile-avatar-url"
-                          value={profileForm.avatarUrlInput}
-                          placeholder={ui.profile.avatarUrlPlaceholder}
-                          className="mt-2 h-12 rounded-2xl border-white/10 bg-background/85"
-                          inputMode="url"
-                          autoCapitalize="none"
-                          autoCorrect="off"
-                          spellCheck={false}
-                          disabled={
-                            isProfileLoading ||
-                            isProfileSaving ||
-                            isAvatarProcessing
-                          }
-                          onChange={(event) => {
-                            const nextAvatarUrl = event.target.value;
-
-                            if (pendingAvatarPreviewUrl) {
-                              URL.revokeObjectURL(pendingAvatarPreviewUrl);
-                            }
-
-                            setProfileError("");
-                            setPendingAvatarFile(null);
-                            setPendingAvatarPreviewUrl("");
-                            setProfileForm((current) => ({
-                              ...current,
-                              avatarUrl: nextAvatarUrl,
-                              avatarUrlInput: nextAvatarUrl
-                            }));
-                          }}
-                        />
                       </div>
                       <Button
                         type="button"
