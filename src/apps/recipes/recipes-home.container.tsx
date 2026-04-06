@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import type { ProfileDto } from "@/src/apis/@types/profile";
 import type { RecipeCollectionDto } from "@/src/apis/@types/recipe-collections";
 import type {
   RecipeDto,
@@ -9,6 +10,10 @@ import type {
   RecipeSpotlightSource,
   SummarizeJobStatus
 } from "@/src/apis/@types/recipes";
+import {
+  getProfile as getProfileRequest,
+  updateProfile as updateProfileRequest
+} from "@/src/apis/profile";
 import {
   createRecipeCollection as createRecipeCollectionRequest,
   deleteRecipeCollection as deleteRecipeCollectionRequest,
@@ -35,11 +40,16 @@ import {
   isRunningStandaloneMode,
   markHomeScreenOnboardingSeen
 } from "@/src/apps/onboarding/home-screen-onboarding";
+import {
+  profileAvatarUrlSchema,
+  profileUsernameSchema
+} from "@/src/apps/profile/profile.schemas";
 import { isYouTubeShortsUrl } from "@/src/apps/recipes/recipes.schemas";
 import { extractYouTubeVideoId } from "@/src/apps/recipes/recipes.utils";
 import { Button } from "@/src/components/ui/button";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import { Input } from "@/src/components/ui/input";
+import { Label as FormLabel } from "@/src/components/ui/label";
 import { Skeleton } from "@/src/components/ui/skeleton";
 import { Switch } from "@/src/components/ui/switch";
 
@@ -99,6 +109,11 @@ type RecipeSpotlight = {
     viewCount: number | null;
     likeCount: number | null;
   } | null;
+};
+
+type ProfileForm = {
+  username: string;
+  avatarUrl: string;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -410,6 +425,24 @@ const copy = {
     },
     profile: {
       recipesSaved: "저장된 레시피 {count}개",
+      profileLoadError: "프로필을 불러오지 못했습니다.",
+      usernameLabel: "핸들",
+      usernameDescription:
+        "프로필에서 표시될 고유한 핸들을 설정하세요. 소문자, 숫자, 마침표, 밑줄을 사용할 수 있습니다.",
+      usernamePlaceholder: "예: pantrychef",
+      usernameHint: "3-24자, 소문자/숫자/마침표/밑줄",
+      usernameRequired: "핸들을 입력해주세요.",
+      usernameInvalid:
+        "핸들은 3-24자의 소문자, 숫자, 마침표, 밑줄만 사용할 수 있습니다.",
+      avatarUrlLabel: "프로필 사진 URL",
+      avatarUrlDescription:
+        "이미지 링크를 붙여넣으면 프로필 사진으로 사용할 수 있습니다.",
+      avatarUrlPlaceholder: "https://example.com/avatar.jpg",
+      avatarUrlInvalid:
+        "http:// 또는 https://로 시작하는 이미지 URL을 입력해주세요.",
+      saveProfile: "프로필 저장",
+      savingProfile: "저장 중...",
+      emailLabel: "이메일",
       themeTitle: "테마",
       themeDescription:
         "앱 화면을 밝은 테마 또는 어두운 테마로 전환할 수 있어요.",
@@ -431,6 +464,7 @@ const copy = {
     actions: {
       recipeSaved: "레시피가 저장되었습니다",
       saveFailed: "저장 실패",
+      profileUpdated: "프로필이 저장되었습니다",
       deleted: "레시피가 삭제되었습니다",
       deleteFailed: "삭제 실패",
       savedOn: "저장됨",
@@ -633,6 +667,24 @@ const copy = {
     },
     profile: {
       recipesSaved: "{count} recipes saved",
+      profileLoadError: "Failed to load profile.",
+      usernameLabel: "Handle",
+      usernameDescription:
+        "Set the unique handle shown on your profile. Use lowercase letters, numbers, periods, or underscores.",
+      usernamePlaceholder: "for example pantrychef",
+      usernameHint: "3-24 chars, lowercase letters, numbers, periods, underscores",
+      usernameRequired: "Please enter a handle.",
+      usernameInvalid:
+        "Use 3-24 lowercase letters, numbers, periods, or underscores.",
+      avatarUrlLabel: "Profile photo URL",
+      avatarUrlDescription:
+        "Paste an image link to use it as your profile photo.",
+      avatarUrlPlaceholder: "https://example.com/avatar.jpg",
+      avatarUrlInvalid:
+        "Please enter an image URL starting with http:// or https://.",
+      saveProfile: "Save Profile",
+      savingProfile: "Saving...",
+      emailLabel: "Email",
       themeTitle: "Theme",
       themeDescription: "Switch the app between light and dark appearance.",
       languageTitle: "App language",
@@ -653,6 +705,7 @@ const copy = {
     actions: {
       recipeSaved: "Recipe saved",
       saveFailed: "Save failed",
+      profileUpdated: "Profile updated",
       deleted: "Recipe deleted",
       deleteFailed: "Delete failed",
       savedOn: "Saved",
@@ -683,6 +736,134 @@ function replaceCount(template: string, count: number) {
 
 function replaceTitle(template: string, title: string) {
   return template.replace("{title}", title);
+}
+
+function readSessionMetadataValue(
+  metadata: Record<string, unknown> | undefined,
+  keys: string[]
+) {
+  for (const key of keys) {
+    const value = metadata?.[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function sanitizeUsernameCandidate(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._]+/g, "_")
+    .replace(/^[._]+|[._]+$/g, "")
+    .slice(0, 24);
+
+  return normalized.length >= 3 ? normalized : "";
+}
+
+function getSuggestedUsername(
+  email: string,
+  metadata: Record<string, unknown> | undefined
+) {
+  const metadataUsername = readSessionMetadataValue(metadata, [
+    "preferred_username",
+    "user_name",
+    "username",
+    "full_name",
+    "name"
+  ]);
+
+  if (metadataUsername) {
+    return sanitizeUsernameCandidate(metadataUsername);
+  }
+
+  const emailLocalPart = email.split("@")[0] ?? "";
+  return sanitizeUsernameCandidate(emailLocalPart);
+}
+
+function getProfileImageUrl(
+  profile: Pick<ProfileDto, "avatarUrl"> | null,
+  metadata: Record<string, unknown> | undefined
+) {
+  return (
+    profile?.avatarUrl ??
+    readSessionMetadataValue(metadata, [
+      "avatar_url",
+      "picture",
+      "profile_image_url"
+    ])
+  );
+}
+
+function getProfileHeadline(
+  profile: Pick<ProfileDto, "username"> | null,
+  email: string,
+  metadata: Record<string, unknown> | undefined
+) {
+  const username = profile?.username ?? getSuggestedUsername(email, metadata);
+
+  if (username) {
+    return `@${username}`;
+  }
+
+  const metadataName = readSessionMetadataValue(metadata, [
+    "full_name",
+    "name"
+  ]);
+
+  if (metadataName) {
+    return metadataName;
+  }
+
+  return email;
+}
+
+function getProfileInitials(label: string) {
+  const sanitized = label.replace(/^@/, "").trim();
+
+  if (!sanitized) {
+    return "";
+  }
+
+  const parts = sanitized
+    .split(/[\s._-]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length >= 2) {
+    return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+  }
+
+  return sanitized.slice(0, 2).toUpperCase();
+}
+
+function validateProfileForm(
+  input: ProfileForm,
+  ui: {
+    usernameRequired: string;
+    usernameInvalid: string;
+    avatarUrlInvalid: string;
+  }
+) {
+  const username = input.username.trim().toLowerCase();
+  const avatarUrl = input.avatarUrl.trim();
+
+  if (!username) {
+    return ui.usernameRequired;
+  }
+
+  if (!profileUsernameSchema.safeParse(username).success) {
+    return ui.usernameInvalid;
+  }
+
+  if (!profileAvatarUrlSchema.safeParse(avatarUrl).success) {
+    return ui.avatarUrlInvalid;
+  }
+
+  return "";
 }
 
 function toRecipe(dto: RecipeDto): Recipe {
@@ -1417,6 +1598,12 @@ export function RecipesHomeContainer() {
   const [collections, setCollections] = useState<RecipeCollectionSummary[]>([]);
   const [allSavedRecipesCount, setAllSavedRecipesCount] = useState(0);
   const [defaultCollectionId, setDefaultCollectionId] = useState("");
+  const [profile, setProfile] = useState<ProfileDto | null>(null);
+  const [profileForm, setProfileForm] = useState<ProfileForm>({
+    username: "",
+    avatarUrl: ""
+  });
+  const [profileError, setProfileError] = useState("");
   const [selectedSavedCollectionId, setSelectedSavedCollectionId] =
     useState<string>(ALL_SAVED_COLLECTION_ID);
   const [savedRecipes, setSavedRecipes] = useState<Recipe[] | null>(null);
@@ -1427,6 +1614,8 @@ export function RecipesHomeContainer() {
   const [isCollectionsLoading, setIsCollectionsLoading] = useState(false);
   const [isSavedRecipesLoading, setIsSavedRecipesLoading] = useState(false);
   const [isSpotlightLoading, setIsSpotlightLoading] = useState(false);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [selectedRecipeId, setSelectedRecipeId] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState(true);
@@ -1494,6 +1683,25 @@ export function RecipesHomeContainer() {
 
   const ui = copy[language];
   const userEmail = session?.user.email ?? "";
+  const sessionMetadata = session?.user.user_metadata as
+    | Record<string, unknown>
+    | undefined;
+  const suggestedUsername = useMemo(
+    () => getSuggestedUsername(userEmail, sessionMetadata),
+    [sessionMetadata, userEmail]
+  );
+  const profileHeadline = useMemo(
+    () => getProfileHeadline(profile, userEmail, sessionMetadata),
+    [profile, sessionMetadata, userEmail]
+  );
+  const profileImageUrl = useMemo(
+    () => getProfileImageUrl(profile, sessionMetadata),
+    [profile, sessionMetadata]
+  );
+  const profileInitials = useMemo(
+    () => getProfileInitials(profileHeadline),
+    [profileHeadline]
+  );
   const savedCollectionRecipes = savedRecipes ?? [];
   const libraryRecipes = useMemo(
     () => (isSearchActive ? (searchResults ?? []) : recipes),
@@ -1526,6 +1734,11 @@ export function RecipesHomeContainer() {
     !savedError &&
     savedCollectionRecipes.length === 0 &&
     collections.length > 0;
+  const normalizedProfileUsername = profileForm.username.trim().toLowerCase();
+  const normalizedProfileAvatarUrl = profileForm.avatarUrl.trim();
+  const isProfileDirty =
+    normalizedProfileUsername !== (profile?.username ?? "") ||
+    normalizedProfileAvatarUrl !== (profile?.avatarUrl ?? "");
 
   const matchesSavedCollectionFilter = (recipe: Recipe) => {
     if (selectedSavedCollectionId === ALL_SAVED_COLLECTION_ID) {
@@ -1705,6 +1918,14 @@ export function RecipesHomeContainer() {
 
   useEffect(() => {
     if (!isReady || !session) {
+      setProfile(null);
+      setProfileForm({
+        username: suggestedUsername,
+        avatarUrl: ""
+      });
+      setProfileError("");
+      setIsProfileLoading(false);
+      setIsProfileSaving(false);
       setRecipes([]);
       setSearchResults(null);
       setCollections([]);
@@ -1751,7 +1972,69 @@ export function RecipesHomeContainer() {
     })();
 
     return () => controller.abort();
-  }, [RECIPES_PAGE_SIZE, isReady, session, ui.library.loadError]);
+  }, [
+    RECIPES_PAGE_SIZE,
+    isReady,
+    session,
+    suggestedUsername,
+    ui.library.loadError
+  ]);
+
+  useEffect(() => {
+    if (!isReady || !session) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        setIsProfileLoading(true);
+        setProfileError("");
+        const nextProfile = await getProfileRequest({
+          signal: controller.signal
+        });
+
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setProfile(nextProfile);
+        setProfileForm({
+          username: nextProfile.username ?? suggestedUsername,
+          avatarUrl:
+            nextProfile.avatarUrl ??
+            getProfileImageUrl(nextProfile, sessionMetadata) ??
+            ""
+        });
+      } catch (err) {
+        if (isAbortError(err)) {
+          return;
+        }
+
+        setProfile(null);
+        setProfileForm({
+          username: suggestedUsername,
+          avatarUrl: getProfileImageUrl(null, sessionMetadata) ?? ""
+        });
+        setProfileError(
+          err instanceof Error ? err.message : ui.profile.profileLoadError
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsProfileLoading(false);
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, [
+    isReady,
+    session,
+    sessionMetadata,
+    suggestedUsername,
+    ui.profile.profileLoadError
+  ]);
 
   useEffect(() => {
     if (!isReady || !session) {
@@ -2171,6 +2454,38 @@ export function RecipesHomeContainer() {
       );
     } finally {
       setIsDeletingCollection(false);
+    }
+  };
+
+  const handleProfileSave = async () => {
+    const nextError = validateProfileForm(profileForm, ui.profile);
+
+    if (nextError) {
+      setProfileError(nextError);
+      return;
+    }
+
+    setProfileError("");
+    setIsProfileSaving(true);
+
+    try {
+      const updated = await updateProfileRequest({
+        username: normalizedProfileUsername,
+        avatarUrl: normalizedProfileAvatarUrl
+      });
+
+      setProfile(updated);
+      setProfileForm({
+        username: updated.username ?? "",
+        avatarUrl: updated.avatarUrl ?? ""
+      });
+      showToast(ui.actions.profileUpdated);
+    } catch (err) {
+      setProfileError(
+        err instanceof Error ? err.message : ui.profile.profileLoadError
+      );
+    } finally {
+      setIsProfileSaving(false);
     }
   };
 
@@ -3737,16 +4052,118 @@ export function RecipesHomeContainer() {
               </div>
               <div className="px-5">
                 <div className="flex flex-col items-center py-10">
-                  <div className="flex h-20 w-20 items-center justify-center rounded-full border border-border/70 bg-card">
-                    <IcUser className="h-9 w-9 text-muted-foreground" />
+                  <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-border/70 bg-card">
+                    {profileImageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={profileImageUrl}
+                        alt={profileHeadline}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : profileInitials ? (
+                      <span className="text-xl font-black tracking-tight">
+                        {profileInitials}
+                      </span>
+                    ) : (
+                      <IcUser className="h-9 w-9 text-muted-foreground" />
+                    )}
                   </div>
-                  <p className="mt-4 font-bold">{session?.user.email}</p>
+                  <p className="mt-4 font-bold">{profileHeadline}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {userEmail}
+                  </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {replaceCount(
                       ui.profile.recipesSaved,
                       allSavedRecipesCount
                     )}
                   </p>
+                </div>
+                <div className="mt-4 rounded-2xl border border-border/70 bg-card p-4">
+                  <p className="text-sm font-bold">{ui.profile.usernameLabel}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {ui.profile.usernameDescription}
+                  </p>
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <FormLabel htmlFor="profile-username">
+                        {ui.profile.usernameLabel}
+                      </FormLabel>
+                      <div className="mt-2 flex items-center rounded-xl border border-border/70 bg-background px-3">
+                        <span className="text-sm text-muted-foreground">@</span>
+                        <Input
+                          id="profile-username"
+                          value={profileForm.username}
+                          placeholder={ui.profile.usernamePlaceholder}
+                          className="border-0 bg-transparent px-2 shadow-none focus-visible:ring-0"
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          disabled={isProfileLoading || isProfileSaving}
+                          onChange={(event) => {
+                            setProfileError("");
+                            setProfileForm((current) => ({
+                              ...current,
+                              username: event.target.value.toLowerCase()
+                            }));
+                          }}
+                        />
+                      </div>
+                      <p className="mt-2 text-[11px] text-muted-foreground">
+                        {ui.profile.usernameHint}
+                      </p>
+                    </div>
+                    <div>
+                      <FormLabel htmlFor="profile-avatar-url">
+                        {ui.profile.avatarUrlLabel}
+                      </FormLabel>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {ui.profile.avatarUrlDescription}
+                      </p>
+                      <Input
+                        id="profile-avatar-url"
+                        value={profileForm.avatarUrl}
+                        placeholder={ui.profile.avatarUrlPlaceholder}
+                        className="mt-2 h-11 rounded-xl"
+                        inputMode="url"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        disabled={isProfileLoading || isProfileSaving}
+                        onChange={(event) => {
+                          setProfileError("");
+                          setProfileForm((current) => ({
+                            ...current,
+                            avatarUrl: event.target.value
+                          }));
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <Label>{ui.profile.emailLabel}</Label>
+                      <p className="mt-2 rounded-xl border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
+                        {userEmail}
+                      </p>
+                    </div>
+                    {profileError && (
+                      <p className="text-sm text-destructive">{profileError}</p>
+                    )}
+                    <Button
+                      type="button"
+                      className="h-11 w-full rounded-xl font-bold"
+                      disabled={
+                        isProfileLoading ||
+                        isProfileSaving ||
+                        !profileForm.username.trim() ||
+                        !isProfileDirty
+                      }
+                      onClick={() => void handleProfileSave()}
+                    >
+                      {isProfileSaving
+                        ? ui.profile.savingProfile
+                        : ui.profile.saveProfile}
+                    </Button>
+                  </div>
                 </div>
                 <div className="rounded-2xl border border-border/70 bg-card p-4">
                   <p className="text-sm font-bold">{ui.profile.themeTitle}</p>
