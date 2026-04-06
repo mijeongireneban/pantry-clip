@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 
+import type { ProfileDto } from "@/src/apis/@types/profile";
 import type { RecipeCollectionDto } from "@/src/apis/@types/recipe-collections";
 import type {
   RecipeDto,
@@ -9,6 +10,10 @@ import type {
   RecipeSpotlightSource,
   SummarizeJobStatus
 } from "@/src/apis/@types/recipes";
+import {
+  getProfile as getProfileRequest,
+  updateProfile as updateProfileRequest,
+  uploadProfileAvatar as uploadProfileAvatarRequest} from "@/src/apis/profile";
 import {
   createRecipeCollection as createRecipeCollectionRequest,
   deleteRecipeCollection as deleteRecipeCollectionRequest,
@@ -35,11 +40,16 @@ import {
   isRunningStandaloneMode,
   markHomeScreenOnboardingSeen
 } from "@/src/apps/onboarding/home-screen-onboarding";
+import {
+  profileAvatarUrlSchema,
+  profileUsernameSchema
+} from "@/src/apps/profile/profile.schemas";
 import { isYouTubeShortsUrl } from "@/src/apps/recipes/recipes.schemas";
 import { extractYouTubeVideoId } from "@/src/apps/recipes/recipes.utils";
 import { Button } from "@/src/components/ui/button";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import { Input } from "@/src/components/ui/input";
+import { Label as FormLabel } from "@/src/components/ui/label";
 import { Skeleton } from "@/src/components/ui/skeleton";
 import { Switch } from "@/src/components/ui/switch";
 
@@ -99,6 +109,11 @@ type RecipeSpotlight = {
     viewCount: number | null;
     likeCount: number | null;
   } | null;
+};
+
+type ProfileForm = {
+  username: string;
+  avatarUrl: string;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -230,6 +245,9 @@ function formatCompactCount(value: number, language: Language) {
 }
 
 const LANGUAGE_STORAGE_KEY = "pantryclip-language";
+const AVATAR_SOURCE_FILE_SIZE_LIMIT_BYTES = 20 * 1024 * 1024;
+const AVATAR_UPLOAD_FILE_SIZE_LIMIT_BYTES = 3 * 1024 * 1024;
+const AVATAR_OUTPUT_SIZE_PX = 320;
 
 const copy = {
   ko: {
@@ -410,6 +428,32 @@ const copy = {
     },
     profile: {
       recipesSaved: "저장된 레시피 {count}개",
+      profileLoadError: "프로필을 불러오지 못했습니다.",
+      avatarTitle: "프로필 사진",
+      avatarDescription:
+        "사진 파일을 바로 올리거나 이미지 링크를 붙여넣을 수 있어요.",
+      avatarHint: "PNG, JPG, WEBP 또는 GIF, 최대 3MB",
+      avatarUpload: "사진 업로드",
+      avatarChange: "사진 변경",
+      avatarRemove: "사진 제거",
+      avatarProcessing: "사진 준비 중...",
+      avatarFileTooLarge:
+        "원본 이미지는 20MB 이하로 선택해주세요. 업로드 전에 자동으로 최적화됩니다.",
+      avatarFileInvalid: "이미지 파일만 업로드할 수 있습니다.",
+      avatarProcessFailed: "이미지 파일을 처리하지 못했습니다. 다시 시도해주세요.",
+      usernameLabel: "핸들",
+      usernameDescription:
+        "프로필에서 표시될 고유한 핸들을 설정하세요. 소문자, 숫자, 마침표, 밑줄을 사용할 수 있습니다.",
+      usernamePlaceholder: "예: pantrychef",
+      usernameHint: "3-24자, 소문자/숫자/마침표/밑줄",
+      usernameRequired: "핸들을 입력해주세요.",
+      usernameInvalid:
+        "핸들은 3-24자의 소문자, 숫자, 마침표, 밑줄만 사용할 수 있습니다.",
+      avatarUrlInvalid:
+        "유효한 이미지 링크를 입력하거나 이미지 파일을 업로드해주세요.",
+      saveProfile: "프로필 저장",
+      savingProfile: "저장 중...",
+      emailLabel: "이메일",
       themeTitle: "테마",
       themeDescription:
         "앱 화면을 밝은 테마 또는 어두운 테마로 전환할 수 있어요.",
@@ -431,6 +475,7 @@ const copy = {
     actions: {
       recipeSaved: "레시피가 저장되었습니다",
       saveFailed: "저장 실패",
+      profileUpdated: "프로필이 저장되었습니다",
       deleted: "레시피가 삭제되었습니다",
       deleteFailed: "삭제 실패",
       savedOn: "저장됨",
@@ -633,6 +678,33 @@ const copy = {
     },
     profile: {
       recipesSaved: "{count} recipes saved",
+      profileLoadError: "Failed to load profile.",
+      avatarTitle: "Profile photo",
+      avatarDescription:
+        "Upload an image file directly or paste an image link.",
+      avatarHint: "PNG, JPG, WEBP, or GIF up to 3MB",
+      avatarUpload: "Upload Photo",
+      avatarChange: "Change Photo",
+      avatarRemove: "Remove Photo",
+      avatarProcessing: "Preparing photo...",
+      avatarFileTooLarge:
+        "Please choose an image up to 20MB. We’ll optimize it before upload.",
+      avatarFileInvalid: "Please choose an image file.",
+      avatarProcessFailed:
+        "We couldn't process that image. Please try another file.",
+      usernameLabel: "Handle",
+      usernameDescription:
+        "Set the unique handle shown on your profile. Use lowercase letters, numbers, periods, or underscores.",
+      usernamePlaceholder: "for example pantrychef",
+      usernameHint: "3-24 chars, lowercase letters, numbers, periods, underscores",
+      usernameRequired: "Please enter a handle.",
+      usernameInvalid:
+        "Use 3-24 lowercase letters, numbers, periods, or underscores.",
+      avatarUrlInvalid:
+        "Enter a valid image URL or upload an image file.",
+      saveProfile: "Save Profile",
+      savingProfile: "Saving...",
+      emailLabel: "Email",
       themeTitle: "Theme",
       themeDescription: "Switch the app between light and dark appearance.",
       languageTitle: "App language",
@@ -653,6 +725,7 @@ const copy = {
     actions: {
       recipeSaved: "Recipe saved",
       saveFailed: "Save failed",
+      profileUpdated: "Profile updated",
       deleted: "Recipe deleted",
       deleteFailed: "Delete failed",
       savedOn: "Saved",
@@ -683,6 +756,221 @@ function replaceCount(template: string, count: number) {
 
 function replaceTitle(template: string, title: string) {
   return template.replace("{title}", title);
+}
+
+function readSessionMetadataValue(
+  metadata: Record<string, unknown> | undefined,
+  keys: string[]
+) {
+  for (const key of keys) {
+    const value = metadata?.[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function sanitizeUsernameCandidate(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._]+/g, "_")
+    .replace(/^[._]+|[._]+$/g, "")
+    .slice(0, 24);
+
+  return normalized.length >= 3 ? normalized : "";
+}
+
+function getSuggestedUsername(
+  email: string,
+  metadata: Record<string, unknown> | undefined
+) {
+  const metadataUsername = readSessionMetadataValue(metadata, [
+    "preferred_username",
+    "user_name",
+    "username",
+    "full_name",
+    "name"
+  ]);
+
+  if (metadataUsername) {
+    return sanitizeUsernameCandidate(metadataUsername);
+  }
+
+  const emailLocalPart = email.split("@")[0] ?? "";
+  return sanitizeUsernameCandidate(emailLocalPart);
+}
+
+function getProfileImageUrl(
+  profile: Pick<ProfileDto, "avatarUrl"> | null,
+  metadata: Record<string, unknown> | undefined
+) {
+  return (
+    profile?.avatarUrl ??
+    readSessionMetadataValue(metadata, [
+      "avatar_url",
+      "picture",
+      "profile_image_url"
+    ])
+  );
+}
+
+function getProfileHeadline(
+  profile: Pick<ProfileDto, "username"> | null,
+  email: string,
+  metadata: Record<string, unknown> | undefined
+) {
+  const username = profile?.username ?? getSuggestedUsername(email, metadata);
+
+  if (username) {
+    return `@${username}`;
+  }
+
+  const metadataName = readSessionMetadataValue(metadata, [
+    "full_name",
+    "name"
+  ]);
+
+  if (metadataName) {
+    return metadataName;
+  }
+
+  return email;
+}
+
+function getProfileInitials(label: string) {
+  const sanitized = label.replace(/^@/, "").trim();
+
+  if (!sanitized) {
+    return "";
+  }
+
+  const parts = sanitized
+    .split(/[\s._-]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length >= 2) {
+    return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+  }
+
+  return sanitized.slice(0, 2).toUpperCase();
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Failed to read image."));
+    };
+
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read image."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImageFromUrl(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Failed to load image."));
+    image.src = src;
+  });
+}
+
+async function createAvatarUploadBlob(file: File) {
+  const sourceUrl = await readFileAsDataUrl(file);
+  const image = await loadImageFromUrl(sourceUrl);
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("Canvas is not available.");
+  }
+
+  canvas.width = AVATAR_OUTPUT_SIZE_PX;
+  canvas.height = AVATAR_OUTPUT_SIZE_PX;
+
+  const cropSize = Math.min(image.naturalWidth, image.naturalHeight);
+  const cropX = (image.naturalWidth - cropSize) / 2;
+  const cropY = (image.naturalHeight - cropSize) / 2;
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(
+    image,
+    cropX,
+    cropY,
+    cropSize,
+    cropSize,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  const blobFromCanvas = (quality: number) =>
+    new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("Failed to create avatar image."));
+            return;
+          }
+
+          resolve(blob);
+        },
+        "image/webp",
+        quality
+      );
+    });
+
+  const qualitySteps = [0.82, 0.72, 0.62, 0.5];
+
+  for (const quality of qualitySteps) {
+    const blob = await blobFromCanvas(quality);
+
+    if (blob.size <= AVATAR_UPLOAD_FILE_SIZE_LIMIT_BYTES) {
+      return blob;
+    }
+  }
+
+  return blobFromCanvas(0.42);
+}
+
+function validateProfileForm(
+  input: ProfileForm,
+  ui: {
+    usernameRequired: string;
+    usernameInvalid: string;
+    avatarUrlInvalid: string;
+  }
+) {
+  const username = input.username.trim().toLowerCase();
+  const avatarUrl = input.avatarUrl.trim();
+
+  if (!username) {
+    return ui.usernameRequired;
+  }
+
+  if (!profileUsernameSchema.safeParse(username).success) {
+    return ui.usernameInvalid;
+  }
+
+  if (!profileAvatarUrlSchema.safeParse(avatarUrl).success) {
+    return ui.avatarUrlInvalid;
+  }
+
+  return "";
 }
 
 function toRecipe(dto: RecipeDto): Recipe {
@@ -841,6 +1129,20 @@ const IcPlus = ({ className }: { className?: string }) => (
   >
     <line x1="12" y1="5" x2="12" y2="19" />
     <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
+const IcEdit = ({ className }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z" />
   </svg>
 );
 const IcUser = ({ className }: { className?: string }) => (
@@ -1417,6 +1719,12 @@ export function RecipesHomeContainer() {
   const [collections, setCollections] = useState<RecipeCollectionSummary[]>([]);
   const [allSavedRecipesCount, setAllSavedRecipesCount] = useState(0);
   const [defaultCollectionId, setDefaultCollectionId] = useState("");
+  const [profile, setProfile] = useState<ProfileDto | null>(null);
+  const [profileForm, setProfileForm] = useState<ProfileForm>({
+    username: "",
+    avatarUrl: ""
+  });
+  const [profileError, setProfileError] = useState("");
   const [selectedSavedCollectionId, setSelectedSavedCollectionId] =
     useState<string>(ALL_SAVED_COLLECTION_ID);
   const [savedRecipes, setSavedRecipes] = useState<Recipe[] | null>(null);
@@ -1427,6 +1735,11 @@ export function RecipesHomeContainer() {
   const [isCollectionsLoading, setIsCollectionsLoading] = useState(false);
   const [isSavedRecipesLoading, setIsSavedRecipesLoading] = useState(false);
   const [isSpotlightLoading, setIsSpotlightLoading] = useState(false);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
+  const [isAvatarProcessing, setIsAvatarProcessing] = useState(false);
+  const [pendingAvatarBlob, setPendingAvatarBlob] = useState<Blob | null>(null);
+  const [pendingAvatarPreviewUrl, setPendingAvatarPreviewUrl] = useState("");
   const [selectedRecipeId, setSelectedRecipeId] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState(true);
@@ -1478,6 +1791,7 @@ export function RecipesHomeContainer() {
     Partial<Record<keyof RecipeDraft, string>>
   >({});
   const [toastMessage, setToastMessage] = useState("");
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
   const [draft, setDraft] = useState<RecipeDraft>({
     sourceUrl: "",
     sourceType: "other",
@@ -1494,6 +1808,38 @@ export function RecipesHomeContainer() {
 
   const ui = copy[language];
   const userEmail = session?.user.email ?? "";
+  const sessionMetadata = session?.user.user_metadata as
+    | Record<string, unknown>
+    | undefined;
+  const suggestedUsername = useMemo(
+    () => getSuggestedUsername(userEmail, sessionMetadata),
+    [sessionMetadata, userEmail]
+  );
+  const profileHeadline = useMemo(
+    () => getProfileHeadline(profile, userEmail, sessionMetadata),
+    [profile, sessionMetadata, userEmail]
+  );
+  const profileImageUrl = useMemo(
+    () => getProfileImageUrl(profile, sessionMetadata),
+    [profile, sessionMetadata]
+  );
+  const normalizedProfileUsername = profileForm.username.trim().toLowerCase();
+  const normalizedProfileAvatarUrl = profileForm.avatarUrl.trim();
+  const hasValidPreviewAvatar =
+    normalizedProfileAvatarUrl.length > 0 &&
+    profileAvatarUrlSchema.safeParse(normalizedProfileAvatarUrl).success;
+  const previewProfileHeadline =
+    normalizedProfileUsername &&
+    profileUsernameSchema.safeParse(normalizedProfileUsername).success
+      ? `@${normalizedProfileUsername}`
+      : profileHeadline;
+  const previewProfileImageUrl = pendingAvatarPreviewUrl || (hasValidPreviewAvatar
+    ? normalizedProfileAvatarUrl
+    : profileImageUrl);
+  const profileInitials = useMemo(
+    () => getProfileInitials(previewProfileHeadline),
+    [previewProfileHeadline]
+  );
   const savedCollectionRecipes = savedRecipes ?? [];
   const libraryRecipes = useMemo(
     () => (isSearchActive ? (searchResults ?? []) : recipes),
@@ -1526,6 +1872,11 @@ export function RecipesHomeContainer() {
     !savedError &&
     savedCollectionRecipes.length === 0 &&
     collections.length > 0;
+  const isProfileDirty =
+    normalizedProfileUsername !== (profile?.username ?? "") ||
+    normalizedProfileAvatarUrl !== (profile?.avatarUrl ?? "") ||
+    Boolean(pendingAvatarBlob);
+  const hasCustomAvatar = Boolean(normalizedProfileAvatarUrl);
 
   const matchesSavedCollectionFilter = (recipe: Recipe) => {
     if (selectedSavedCollectionId === ALL_SAVED_COLLECTION_ID) {
@@ -1652,6 +2003,14 @@ export function RecipesHomeContainer() {
   }, [language]);
 
   useEffect(() => {
+    return () => {
+      if (pendingAvatarPreviewUrl) {
+        URL.revokeObjectURL(pendingAvatarPreviewUrl);
+      }
+    };
+  }, [pendingAvatarPreviewUrl]);
+
+  useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       setDebouncedSearchQuery(searchQuery.trim());
     }, SEARCH_DEBOUNCE_MS);
@@ -1705,6 +2064,23 @@ export function RecipesHomeContainer() {
 
   useEffect(() => {
     if (!isReady || !session) {
+      setPendingAvatarPreviewUrl((currentPreviewUrl) => {
+        if (currentPreviewUrl) {
+          URL.revokeObjectURL(currentPreviewUrl);
+        }
+
+        return "";
+      });
+      setProfile(null);
+      setPendingAvatarBlob(null);
+      setProfileForm({
+        username: suggestedUsername,
+        avatarUrl: ""
+      });
+      setProfileError("");
+      setIsProfileLoading(false);
+      setIsProfileSaving(false);
+      setIsAvatarProcessing(false);
       setRecipes([]);
       setSearchResults(null);
       setCollections([]);
@@ -1751,7 +2127,63 @@ export function RecipesHomeContainer() {
     })();
 
     return () => controller.abort();
-  }, [RECIPES_PAGE_SIZE, isReady, session, ui.library.loadError]);
+  }, [
+    RECIPES_PAGE_SIZE,
+    isReady,
+    session,
+    suggestedUsername,
+    ui.library.loadError
+  ]);
+
+  useEffect(() => {
+    if (!isReady || !session) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        setIsProfileLoading(true);
+        setProfileError("");
+        const nextProfile = await getProfileRequest({
+          signal: controller.signal
+        });
+
+        if (controller.signal.aborted) {
+          return;
+        }
+        setProfile(nextProfile);
+        setProfileForm({
+          username: nextProfile.username ?? suggestedUsername,
+          avatarUrl: nextProfile.avatarUrl ?? ""
+        });
+      } catch (err) {
+        if (isAbortError(err)) {
+          return;
+        }
+        setProfile(null);
+        setProfileForm({
+          username: suggestedUsername,
+          avatarUrl: ""
+        });
+        setProfileError(
+          err instanceof Error ? err.message : ui.profile.profileLoadError
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsProfileLoading(false);
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, [
+    isReady,
+    session,
+    suggestedUsername,
+    ui.profile.profileLoadError
+  ]);
 
   useEffect(() => {
     if (!isReady || !session) {
@@ -2171,6 +2603,99 @@ export function RecipesHomeContainer() {
       );
     } finally {
       setIsDeletingCollection(false);
+    }
+  };
+
+  const handleAvatarFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    event.target.value = "";
+
+    if (!file.type.startsWith("image/")) {
+      setProfileError(ui.profile.avatarFileInvalid);
+      return;
+    }
+
+    if (file.size > AVATAR_SOURCE_FILE_SIZE_LIMIT_BYTES) {
+      setProfileError(ui.profile.avatarFileTooLarge);
+      return;
+    }
+
+    setProfileError("");
+    setIsAvatarProcessing(true);
+
+    try {
+      const nextAvatarBlob = await createAvatarUploadBlob(file);
+      const nextPreviewUrl = URL.createObjectURL(nextAvatarBlob);
+
+      if (pendingAvatarPreviewUrl) {
+        URL.revokeObjectURL(pendingAvatarPreviewUrl);
+      }
+
+      setPendingAvatarBlob(nextAvatarBlob);
+      setPendingAvatarPreviewUrl(nextPreviewUrl);
+      setProfileForm((current) => ({
+        ...current,
+        avatarUrl: ""
+      }));
+    } catch {
+      setProfileError(ui.profile.avatarProcessFailed);
+    } finally {
+      setIsAvatarProcessing(false);
+    }
+  };
+
+  const handleProfileSave = async () => {
+    const nextError = validateProfileForm(profileForm, ui.profile);
+
+    if (nextError) {
+      setProfileError(nextError);
+      return;
+    }
+
+    setProfileError("");
+    setIsProfileSaving(true);
+
+    try {
+      let nextAvatarUrl = normalizedProfileAvatarUrl;
+
+      if (pendingAvatarBlob) {
+        const uploadUserId = session?.user.id ?? profile?.id;
+
+        if (!uploadUserId) {
+          throw new Error(ui.profile.profileLoadError);
+        }
+
+        nextAvatarUrl = await uploadProfileAvatarRequest(uploadUserId, pendingAvatarBlob);
+      }
+
+      const updated = await updateProfileRequest({
+        username: normalizedProfileUsername,
+        avatarUrl: nextAvatarUrl
+      });
+
+      if (pendingAvatarPreviewUrl) {
+        URL.revokeObjectURL(pendingAvatarPreviewUrl);
+      }
+
+      setPendingAvatarBlob(null);
+      setPendingAvatarPreviewUrl("");
+      setProfile(updated);
+      setProfileForm({
+        username: updated.username ?? "",
+        avatarUrl: updated.avatarUrl ?? ""
+      });
+      showToast(ui.actions.profileUpdated);
+    } catch (err) {
+      setProfileError(
+        err instanceof Error ? err.message : ui.profile.profileLoadError
+      );
+    } finally {
+      setIsProfileSaving(false);
     }
   };
 
@@ -3736,19 +4261,126 @@ export function RecipesHomeContainer() {
                 <Logo />
               </div>
               <div className="px-5">
-                <div className="flex flex-col items-center py-10">
-                  <div className="flex h-20 w-20 items-center justify-center rounded-full border border-border/70 bg-card">
-                    <IcUser className="h-9 w-9 text-muted-foreground" />
+                <div className="relative overflow-hidden rounded-[28px] border border-primary/20 bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.18),transparent_42%),linear-gradient(180deg,hsl(var(--card)),color-mix(in_oklch,hsl(var(--card))_88%,hsl(var(--primary))_12%))] p-5 shadow-[0_24px_80px_-44px_hsl(var(--primary))]">
+                  <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
+                  <div className="flex items-start gap-4">
+                    <div className="relative flex-shrink-0">
+                      <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[26px] border border-white/10 bg-background/80 shadow-[0_18px_38px_-22px_rgba(0,0,0,0.65)]">
+                        {previewProfileImageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={previewProfileImageUrl}
+                            alt={previewProfileHeadline}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : profileInitials ? (
+                          <span className="text-2xl font-black tracking-tight">
+                            {profileInitials}
+                          </span>
+                        ) : (
+                          <IcUser className="h-10 w-10 text-muted-foreground" />
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        aria-label={hasCustomAvatar ? ui.profile.avatarChange : ui.profile.avatarUpload}
+                        className="absolute -bottom-2 -right-2 flex h-9 w-9 items-center justify-center rounded-full border border-primary/30 bg-primary text-primary-foreground shadow-[0_16px_30px_-18px_hsl(var(--primary))]"
+                        disabled={
+                          isProfileLoading || isProfileSaving || isAvatarProcessing
+                        }
+                        onClick={() => avatarFileInputRef.current?.click()}
+                      >
+                        <IcEdit className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="min-w-0 flex-1 pt-1">
+                      <h2 className="truncate text-2xl font-black tracking-tight">
+                        {previewProfileHeadline}
+                      </h2>
+                      <p className="mt-1 truncate text-sm text-muted-foreground">
+                        {userEmail}
+                      </p>
+                      <div className="mt-4 inline-flex rounded-full border border-white/10 bg-background/70 px-3 py-1.5 text-xs font-bold text-foreground/90">
+                        {replaceCount(ui.profile.recipesSaved, allSavedRecipesCount)}
+                      </div>
+                      <div className="mt-4 flex flex-wrap items-center gap-3">
+                        {isAvatarProcessing && (
+                          <p className="text-[11px] text-muted-foreground">
+                            {ui.profile.avatarProcessing}
+                          </p>
+                        )}
+                      </div>
+                      <input
+                        ref={avatarFileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="hidden"
+                        disabled={
+                          isProfileLoading || isProfileSaving || isAvatarProcessing
+                        }
+                        onChange={(event) => void handleAvatarFileChange(event)}
+                      />
+                    </div>
                   </div>
-                  <p className="mt-4 font-bold">{session?.user.email}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {replaceCount(
-                      ui.profile.recipesSaved,
-                      allSavedRecipesCount
+                  <div className="mt-5 rounded-[22px] border border-white/10 bg-background/55 p-4 backdrop-blur-sm">
+                    <div className="grid gap-5">
+                      <div>
+                        <FormLabel htmlFor="profile-username">
+                          {ui.profile.usernameLabel}
+                        </FormLabel>
+                        <div className="mt-2 flex items-center rounded-2xl border border-white/10 bg-background/85 px-4 shadow-inner">
+                          <span className="text-sm font-bold text-primary">@</span>
+                          <Input
+                            id="profile-username"
+                            value={profileForm.username}
+                            placeholder={ui.profile.usernamePlaceholder}
+                            className="h-12 border-0 bg-transparent px-2 shadow-none focus-visible:ring-0"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            disabled={
+                              isProfileLoading ||
+                              isProfileSaving ||
+                              isAvatarProcessing
+                            }
+                            onChange={(event) => {
+                              setProfileError("");
+                              setProfileForm((current) => ({
+                                ...current,
+                                username: event.target.value.toLowerCase()
+                              }));
+                            }}
+                          />
+                        </div>
+                        <p className="mt-2 text-[11px] text-muted-foreground">
+                          {ui.profile.usernameHint}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        className="h-12 w-full rounded-2xl px-6 font-bold shadow-[0_18px_44px_-24px_hsl(var(--primary))]"
+                        disabled={
+                          isProfileLoading ||
+                          isProfileSaving ||
+                          isAvatarProcessing ||
+                          !profileForm.username.trim() ||
+                          !isProfileDirty
+                        }
+                        onClick={() => void handleProfileSave()}
+                      >
+                        {isProfileSaving
+                          ? ui.profile.savingProfile
+                          : ui.profile.saveProfile}
+                      </Button>
+                    </div>
+                    {profileError && (
+                      <p className="mt-4 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                        {profileError}
+                      </p>
                     )}
-                  </p>
+                  </div>
                 </div>
-                <div className="rounded-2xl border border-border/70 bg-card p-4">
+                <div className="mt-4 rounded-2xl border border-border/70 bg-card p-4">
                   <p className="text-sm font-bold">{ui.profile.themeTitle}</p>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                     {ui.profile.themeDescription}

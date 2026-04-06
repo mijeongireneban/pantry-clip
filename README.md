@@ -107,6 +107,7 @@ Recommended local environment variables:
 - `YOUTUBE_DATA_API_KEY` for saved recipe popularity spotlight metrics
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `NEXT_PUBLIC_SUPABASE_AVATAR_BUCKET` optional, defaults to `avatars`
 
 ## Background Worker
 

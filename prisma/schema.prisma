@@ -64,6 +64,8 @@ enum SummarizeJobFailureKind {
 model User {
   id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email             String             @unique
+  username          String?            @unique @db.VarChar(24)
+  avatarUrl         String?            @map("avatar_url")
   createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime           @default(now()) @map("updated_at") @db.Timestamptz(6)
   recipes           Recipe[]
