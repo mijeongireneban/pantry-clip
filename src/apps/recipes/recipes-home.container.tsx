@@ -287,7 +287,8 @@ const copy = {
       login: "로그인",
       createAccountCta: "계정 만들기",
       orContinueWith: "또는 다른 방법으로 계속",
-      socialComingSoon: "소셜 로그인은 곧 지원됩니다",
+      continueWithGoogle: "Google로 계속",
+      googleRedirecting: "Google로 이동 중...",
       dontHaveAccount: "계정이 없으신가요?",
       alreadyHaveAccount: "이미 계정이 있으신가요?",
       rememberedPassword: "비밀번호가 생각나셨나요?",
@@ -535,7 +536,8 @@ const copy = {
       login: "Login",
       createAccountCta: "Create Account",
       orContinueWith: "or continue with",
-      socialComingSoon: "Social login coming soon",
+      continueWithGoogle: "Continue with Google",
+      googleRedirecting: "Redirecting to Google...",
       dontHaveAccount: "Don't have an account?",
       alreadyHaveAccount: "Already have an account?",
       rememberedPassword: "Remembered your password?",
@@ -1090,6 +1092,26 @@ const IcShare = ({ className }: { className?: string }) => (
     <circle cx="18" cy="19" r="3" />
     <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
     <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+  </svg>
+);
+const IcGoogle = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      fill="#EA4335"
+      d="M12.24 10.29v3.93h5.47c-.24 1.27-.96 2.35-2.04 3.07l3.3 2.56c1.92-1.77 3.03-4.38 3.03-7.49 0-.72-.06-1.41-.19-2.07z"
+    />
+    <path
+      fill="#34A853"
+      d="M12 22c2.75 0 5.06-.91 6.75-2.46l-3.3-2.56c-.91.61-2.08.97-3.45.97-2.65 0-4.89-1.79-5.69-4.19H2.9v2.63A10 10 0 0 0 12 22"
+    />
+    <path
+      fill="#4A90E2"
+      d="M6.31 13.76a6.01 6.01 0 0 1 0-3.52V7.61H2.9a10 10 0 0 0 0 8.78z"
+    />
+    <path
+      fill="#FBBC05"
+      d="M12 6.05c1.5 0 2.84.52 3.89 1.52l2.92-2.92C17.06 2.99 14.75 2 12 2A10 10 0 0 0 2.9 7.61l3.41 2.63C7.11 7.84 9.35 6.05 12 6.05"
+    />
   </svg>
 );
 const IcBookmark = ({ className }: { className?: string }) => (
@@ -1703,6 +1725,7 @@ export function RecipesHomeContainer() {
   const {
     isReady,
     session,
+    signInWithGoogle,
     signInWithPassword,
     signOut,
     signUpWithPassword,
@@ -1761,6 +1784,9 @@ export function RecipesHomeContainer() {
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
   const [authConfirmPasswordError, setAuthConfirmPasswordError] = useState("");
+  const [authBusyMode, setAuthBusyMode] = useState<"password" | "google" | null>(
+    null
+  );
   const [authMode, setAuthMode] = useState<
     "sign_in" | "sign_up" | "forgot_password"
   >("sign_in");
@@ -2001,6 +2027,31 @@ export function RecipesHomeContainer() {
   useEffect(() => {
     document.documentElement.lang = language === "ko" ? "ko" : "en";
   }, [language]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const authErrorParam = searchParams.get("authError");
+
+    if (authErrorParam !== "oauth_callback") {
+      return;
+    }
+
+    setAuthError(ui.auth.authFailed);
+    setAuthBusy(false);
+    setAuthBusyMode(null);
+
+    searchParams.delete("authError");
+    const nextSearch = searchParams.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`
+    );
+  }, [ui.auth.authFailed]);
 
   useEffect(() => {
     return () => {
@@ -2699,6 +2750,28 @@ export function RecipesHomeContainer() {
     }
   };
 
+  const handleGoogleAuth = async () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    setAuthError("");
+    setAuthNotice("");
+    setAuthConfirmPasswordError("");
+    setAuthBusyMode("google");
+    setAuthBusy(true);
+
+    try {
+      const callbackUrl = new URL("/auth/callback", window.location.origin);
+      callbackUrl.searchParams.set("next", "/");
+      await signInWithGoogle(callbackUrl.toString());
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : ui.auth.authFailed);
+      setAuthBusy(false);
+      setAuthBusyMode(null);
+    }
+  };
+
   const handleSaveRecipeCollections = async () => {
     if (!selectedRecipe) {
       return;
@@ -2766,6 +2839,7 @@ export function RecipesHomeContainer() {
     setAuthError("");
     setAuthNotice("");
     setAuthConfirmPasswordError("");
+    setAuthBusyMode("password");
 
     const trimmedEmail = authEmail.trim();
 
@@ -2815,6 +2889,7 @@ export function RecipesHomeContainer() {
       setAuthError(err instanceof Error ? err.message : ui.auth.authFailed);
     } finally {
       setAuthBusy(false);
+      setAuthBusyMode(null);
     }
   };
 
@@ -3243,23 +3318,33 @@ export function RecipesHomeContainer() {
                   disabled={!isReady || authBusy}
                   onClick={() => void handleAuthSubmit()}
                 >
-                  {authBusy
+                  {authBusy && authBusyMode === "password"
                     ? ui.auth.loading
                     : authMode === "sign_in"
                       ? ui.auth.login
                       : authMode === "sign_up"
                         ? ui.auth.createAccountCta
                         : ui.auth.sendResetLink}
-                  {!authBusy && <IcArrow className="h-4 w-4" />}
+                  {(!authBusy || authBusyMode !== "password") && (
+                    <IcArrow className="h-4 w-4" />
+                  )}
                 </Button>
 
                 {authMode !== "forgot_password" && (
                   <>
-                    {/* TODO: Google and Apple social login */}
                     <Divider label={ui.auth.orContinueWith} />
-                    <p className="text-center text-xs text-muted-foreground">
-                      {ui.auth.socialComingSoon}
-                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-[52px] w-full gap-3 rounded-xl border border-border/70 bg-card text-[15px] font-bold"
+                      disabled={!isReady || authBusy}
+                      onClick={() => void handleGoogleAuth()}
+                    >
+                      <IcGoogle className="h-5 w-5" />
+                      {authBusy && authBusyMode === "google"
+                        ? ui.auth.googleRedirecting
+                        : ui.auth.continueWithGoogle}
+                    </Button>
                   </>
                 )}
 
