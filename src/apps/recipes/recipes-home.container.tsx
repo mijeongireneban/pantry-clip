@@ -4285,35 +4285,68 @@ export function RecipesHomeContainer() {
                 <div className="relative overflow-hidden rounded-[28px] border border-primary/20 bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.18),transparent_42%),linear-gradient(180deg,hsl(var(--card)),color-mix(in_oklch,hsl(var(--card))_88%,hsl(var(--primary))_12%))] p-5 shadow-[0_24px_80px_-44px_hsl(var(--primary))]">
                   <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
                   <div className="flex items-start gap-4">
-                    <div className="relative">
-                      <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[26px] border border-white/10 bg-background/80 shadow-[0_18px_38px_-22px_rgba(0,0,0,0.65)]">
-                        {previewProfileImageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={previewProfileImageUrl}
-                            alt={previewProfileHeadline}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : profileInitials ? (
-                          <span className="text-2xl font-black tracking-tight">
-                            {profileInitials}
-                          </span>
-                        ) : (
-                          <IcUser className="h-10 w-10 text-muted-foreground" />
+                    <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center overflow-hidden rounded-[26px] border border-white/10 bg-background/80 shadow-[0_18px_38px_-22px_rgba(0,0,0,0.65)]">
+                      {previewProfileImageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={previewProfileImageUrl}
+                          alt={previewProfileHeadline}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : profileInitials ? (
+                        <span className="text-2xl font-black tracking-tight">
+                          {profileInitials}
+                        </span>
+                      ) : (
+                        <IcUser className="h-10 w-10 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1 pt-1">
+                      <h2 className="truncate text-2xl font-black tracking-tight">
+                        {previewProfileHeadline}
+                      </h2>
+                      <p className="mt-1 truncate text-sm text-muted-foreground">
+                        {userEmail}
+                      </p>
+                      <div className="mt-4 inline-flex rounded-full border border-white/10 bg-background/70 px-3 py-1.5 text-xs font-bold text-foreground/90">
+                        {replaceCount(ui.profile.recipesSaved, allSavedRecipesCount)}
+                      </div>
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          className="h-9 rounded-full px-4 text-xs font-bold"
+                          disabled={
+                            isProfileLoading || isProfileSaving || isAvatarProcessing
+                          }
+                          onClick={() => avatarFileInputRef.current?.click()}
+                        >
+                          {hasCustomAvatar
+                            ? ui.profile.avatarChange
+                            : ui.profile.avatarUpload}
+                        </Button>
+                        {hasCustomAvatar && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-9 rounded-full px-4 text-xs font-bold"
+                            disabled={
+                              isProfileLoading ||
+                              isProfileSaving ||
+                              isAvatarProcessing
+                            }
+                            onClick={handleRemoveAvatar}
+                          >
+                            {ui.profile.avatarRemove}
+                          </Button>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        className="absolute -bottom-2 -right-2 rounded-full border border-primary/30 bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground shadow-[0_12px_24px_-16px_hsl(var(--primary))]"
-                        disabled={
-                          isProfileLoading || isProfileSaving || isAvatarProcessing
-                        }
-                        onClick={() => avatarFileInputRef.current?.click()}
-                      >
-                        {hasCustomAvatar
-                          ? ui.profile.avatarChange
-                          : ui.profile.avatarUpload}
-                      </button>
+                      {(isAvatarProcessing || !hasCustomAvatar) && (
+                        <p className="mt-3 text-[11px] text-muted-foreground">
+                          {isAvatarProcessing
+                            ? ui.profile.avatarProcessing
+                            : ui.profile.avatarHint}
+                        </p>
+                      )}
                       <input
                         ref={avatarFileInputRef}
                         type="file"
@@ -4325,58 +4358,13 @@ export function RecipesHomeContainer() {
                         onChange={(event) => void handleAvatarFileChange(event)}
                       />
                     </div>
-                    <div className="min-w-0 flex-1 pt-1">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-primary/80">
-                        {ui.profile.avatarTitle}
-                      </p>
-                      <h2 className="mt-2 truncate text-2xl font-black tracking-tight">
-                        {previewProfileHeadline}
-                      </h2>
-                      <p className="mt-1 truncate text-sm text-muted-foreground">
-                        {userEmail}
-                      </p>
-                      <div className="mt-4 inline-flex rounded-full border border-white/10 bg-background/70 px-3 py-1.5 text-xs font-bold text-foreground/90">
-                        {replaceCount(ui.profile.recipesSaved, allSavedRecipesCount)}
-                      </div>
-                    </div>
                   </div>
                   <div className="mt-5 rounded-[22px] border border-white/10 bg-background/55 p-4 backdrop-blur-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-bold">{ui.profile.avatarTitle}</p>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {ui.profile.avatarDescription}
-                        </p>
-                        <p className="mt-2 text-[11px] text-muted-foreground">
-                          {isAvatarProcessing
-                            ? ui.profile.avatarProcessing
-                            : ui.profile.avatarHint}
-                        </p>
-                      </div>
-                      {hasCustomAvatar && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-9 rounded-full px-3 text-xs font-bold"
-                          disabled={
-                            isProfileLoading ||
-                            isProfileSaving ||
-                            isAvatarProcessing
-                          }
-                          onClick={handleRemoveAvatar}
-                        >
-                          {ui.profile.avatarRemove}
-                        </Button>
-                      )}
-                    </div>
-                    <div className="mt-5 grid gap-4">
+                    <div className="grid gap-5">
                       <div>
                         <FormLabel htmlFor="profile-username">
                           {ui.profile.usernameLabel}
                         </FormLabel>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {ui.profile.usernameDescription}
-                        </p>
                         <div className="mt-2 flex items-center rounded-2xl border border-white/10 bg-background/85 px-4 shadow-inner">
                           <span className="text-sm font-bold text-primary">@</span>
                           <Input
@@ -4409,9 +4397,6 @@ export function RecipesHomeContainer() {
                         <FormLabel htmlFor="profile-avatar-url">
                           {ui.profile.avatarUrlLabel}
                         </FormLabel>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {ui.profile.avatarUrlDescription}
-                        </p>
                         <Input
                           id="profile-avatar-url"
                           value={profileForm.avatarUrlInput}
@@ -4444,30 +4429,22 @@ export function RecipesHomeContainer() {
                           }}
                         />
                       </div>
-                      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                        <div>
-                          <Label>{ui.profile.emailLabel}</Label>
-                          <p className="mt-2 rounded-2xl border border-white/10 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
-                            {userEmail}
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          className="h-12 rounded-2xl px-6 font-bold shadow-[0_18px_44px_-24px_hsl(var(--primary))]"
-                          disabled={
-                            isProfileLoading ||
-                            isProfileSaving ||
-                            isAvatarProcessing ||
-                            !profileForm.username.trim() ||
-                            !isProfileDirty
-                          }
-                          onClick={() => void handleProfileSave()}
-                        >
-                          {isProfileSaving
-                            ? ui.profile.savingProfile
-                            : ui.profile.saveProfile}
-                        </Button>
-                      </div>
+                      <Button
+                        type="button"
+                        className="h-12 w-full rounded-2xl px-6 font-bold shadow-[0_18px_44px_-24px_hsl(var(--primary))]"
+                        disabled={
+                          isProfileLoading ||
+                          isProfileSaving ||
+                          isAvatarProcessing ||
+                          !profileForm.username.trim() ||
+                          !isProfileDirty
+                        }
+                        onClick={() => void handleProfileSave()}
+                      >
+                        {isProfileSaving
+                          ? ui.profile.savingProfile
+                          : ui.profile.saveProfile}
+                      </Button>
                     </div>
                     {profileError && (
                       <p className="mt-4 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
