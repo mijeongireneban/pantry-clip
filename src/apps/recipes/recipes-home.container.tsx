@@ -2048,12 +2048,15 @@ export function RecipesHomeContainer() {
 
   useEffect(() => {
     if (!isReady || !session) {
-      if (pendingAvatarPreviewUrl) {
-        URL.revokeObjectURL(pendingAvatarPreviewUrl);
-      }
+      setPendingAvatarPreviewUrl((currentPreviewUrl) => {
+        if (currentPreviewUrl) {
+          URL.revokeObjectURL(currentPreviewUrl);
+        }
+
+        return "";
+      });
       setProfile(null);
       setPendingAvatarFile(null);
-      setPendingAvatarPreviewUrl("");
       setProfileForm({
         username: suggestedUsername,
         avatarUrl: ""
@@ -2111,7 +2114,6 @@ export function RecipesHomeContainer() {
   }, [
     RECIPES_PAGE_SIZE,
     isReady,
-    pendingAvatarPreviewUrl,
     session,
     suggestedUsername,
     ui.library.loadError
@@ -2135,13 +2137,6 @@ export function RecipesHomeContainer() {
         if (controller.signal.aborted) {
           return;
         }
-
-        if (pendingAvatarPreviewUrl) {
-          URL.revokeObjectURL(pendingAvatarPreviewUrl);
-        }
-
-        setPendingAvatarFile(null);
-        setPendingAvatarPreviewUrl("");
         setProfile(nextProfile);
         setProfileForm({
           username: nextProfile.username ?? suggestedUsername,
@@ -2151,13 +2146,6 @@ export function RecipesHomeContainer() {
         if (isAbortError(err)) {
           return;
         }
-
-        if (pendingAvatarPreviewUrl) {
-          URL.revokeObjectURL(pendingAvatarPreviewUrl);
-        }
-
-        setPendingAvatarFile(null);
-        setPendingAvatarPreviewUrl("");
         setProfile(null);
         setProfileForm({
           username: suggestedUsername,
@@ -2176,7 +2164,6 @@ export function RecipesHomeContainer() {
     return () => controller.abort();
   }, [
     isReady,
-    pendingAvatarPreviewUrl,
     session,
     suggestedUsername,
     ui.profile.profileLoadError
