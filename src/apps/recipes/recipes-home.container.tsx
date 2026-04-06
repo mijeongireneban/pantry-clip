@@ -12,8 +12,8 @@ import type {
 } from "@/src/apis/@types/recipes";
 import {
   getProfile as getProfileRequest,
-  updateProfile as updateProfileRequest
-} from "@/src/apis/profile";
+  updateProfile as updateProfileRequest,
+  uploadProfileAvatar as uploadProfileAvatarRequest} from "@/src/apis/profile";
 import {
   createRecipeCollection as createRecipeCollectionRequest,
   deleteRecipeCollection as deleteRecipeCollectionRequest,
@@ -246,7 +246,7 @@ function formatCompactCount(value: number, language: Language) {
 }
 
 const LANGUAGE_STORAGE_KEY = "pantryclip-language";
-const AVATAR_FILE_SIZE_LIMIT_BYTES = 5 * 1024 * 1024;
+const AVATAR_FILE_SIZE_LIMIT_BYTES = 3 * 1024 * 1024;
 const AVATAR_OUTPUT_SIZE_PX = 320;
 
 const copy = {
@@ -432,12 +432,12 @@ const copy = {
       avatarTitle: "프로필 사진",
       avatarDescription:
         "사진 파일을 바로 올리거나 이미지 링크를 붙여넣을 수 있어요.",
-      avatarHint: "PNG, JPG, WEBP 또는 GIF, 최대 5MB",
+      avatarHint: "PNG, JPG, WEBP 또는 GIF, 최대 3MB",
       avatarUpload: "사진 업로드",
       avatarChange: "사진 변경",
       avatarRemove: "사진 제거",
       avatarProcessing: "사진 준비 중...",
-      avatarFileTooLarge: "5MB 이하의 이미지를 선택해주세요.",
+      avatarFileTooLarge: "3MB 이하의 이미지를 선택해주세요.",
       avatarFileInvalid: "이미지 파일만 업로드할 수 있습니다.",
       avatarProcessFailed: "이미지 파일을 처리하지 못했습니다. 다시 시도해주세요.",
       usernameLabel: "핸들",
@@ -685,12 +685,12 @@ const copy = {
       avatarTitle: "Profile photo",
       avatarDescription:
         "Upload an image file directly or paste an image link.",
-      avatarHint: "PNG, JPG, WEBP, or GIF up to 5MB",
+      avatarHint: "PNG, JPG, WEBP, or GIF up to 3MB",
       avatarUpload: "Upload Photo",
       avatarChange: "Change Photo",
       avatarRemove: "Remove Photo",
       avatarProcessing: "Preparing photo...",
-      avatarFileTooLarge: "Please choose an image up to 5MB.",
+      avatarFileTooLarge: "Please choose an image up to 3MB.",
       avatarFileInvalid: "Please choose an image file.",
       avatarProcessFailed:
         "We couldn't process that image. Please try another file.",
@@ -902,7 +902,7 @@ function loadImageFromUrl(src: string) {
   });
 }
 
-async function createAvatarDataUrl(file: File) {
+async function createAvatarUploadBlob(file: File) {
   const sourceUrl = await readFileAsDataUrl(file);
   const image = await loadImageFromUrl(sourceUrl);
   const canvas = document.createElement("canvas");
@@ -932,7 +932,20 @@ async function createAvatarDataUrl(file: File) {
     canvas.height
   );
 
-  return canvas.toDataURL("image/webp", 0.82);
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("Failed to create avatar image."));
+          return;
+        }
+
+        resolve(blob);
+      },
+      "image/webp",
+      0.82
+    );
+  });
 }
 
 function validateProfileForm(
@@ -1713,6 +1726,8 @@ export function RecipesHomeContainer() {
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isAvatarProcessing, setIsAvatarProcessing] = useState(false);
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [pendingAvatarPreviewUrl, setPendingAvatarPreviewUrl] = useState("");
   const [selectedRecipeId, setSelectedRecipeId] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState(true);
@@ -1806,9 +1821,9 @@ export function RecipesHomeContainer() {
     profileUsernameSchema.safeParse(normalizedProfileUsername).success
       ? `@${normalizedProfileUsername}`
       : profileHeadline;
-  const previewProfileImageUrl = hasValidPreviewAvatar
+  const previewProfileImageUrl = pendingAvatarPreviewUrl || (hasValidPreviewAvatar
     ? normalizedProfileAvatarUrl
-    : profileImageUrl;
+    : profileImageUrl);
   const profileInitials = useMemo(
     () => getProfileInitials(previewProfileHeadline),
     [previewProfileHeadline]
@@ -1847,7 +1862,8 @@ export function RecipesHomeContainer() {
     collections.length > 0;
   const isProfileDirty =
     normalizedProfileUsername !== (profile?.username ?? "") ||
-    normalizedProfileAvatarUrl !== (profile?.avatarUrl ?? "");
+    normalizedProfileAvatarUrl !== (profile?.avatarUrl ?? "") ||
+    Boolean(pendingAvatarFile);
   const hasCustomAvatar = Boolean(normalizedProfileAvatarUrl);
 
   const matchesSavedCollectionFilter = (recipe: Recipe) => {
@@ -1975,6 +1991,14 @@ export function RecipesHomeContainer() {
   }, [language]);
 
   useEffect(() => {
+    return () => {
+      if (pendingAvatarPreviewUrl) {
+        URL.revokeObjectURL(pendingAvatarPreviewUrl);
+      }
+    };
+  }, [pendingAvatarPreviewUrl]);
+
+  useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       setDebouncedSearchQuery(searchQuery.trim());
     }, SEARCH_DEBOUNCE_MS);
@@ -2028,7 +2052,12 @@ export function RecipesHomeContainer() {
 
   useEffect(() => {
     if (!isReady || !session) {
+      if (pendingAvatarPreviewUrl) {
+        URL.revokeObjectURL(pendingAvatarPreviewUrl);
+      }
       setProfile(null);
+      setPendingAvatarFile(null);
+      setPendingAvatarPreviewUrl("");
       setProfileForm({
         username: suggestedUsername,
         avatarUrl: "",
@@ -2087,6 +2116,7 @@ export function RecipesHomeContainer() {
   }, [
     RECIPES_PAGE_SIZE,
     isReady,
+    pendingAvatarPreviewUrl,
     session,
     suggestedUsername,
     ui.library.loadError
@@ -2111,6 +2141,12 @@ export function RecipesHomeContainer() {
           return;
         }
 
+        if (pendingAvatarPreviewUrl) {
+          URL.revokeObjectURL(pendingAvatarPreviewUrl);
+        }
+
+        setPendingAvatarFile(null);
+        setPendingAvatarPreviewUrl("");
         setProfile(nextProfile);
         setProfileForm({
           username: nextProfile.username ?? suggestedUsername,
@@ -2122,6 +2158,12 @@ export function RecipesHomeContainer() {
           return;
         }
 
+        if (pendingAvatarPreviewUrl) {
+          URL.revokeObjectURL(pendingAvatarPreviewUrl);
+        }
+
+        setPendingAvatarFile(null);
+        setPendingAvatarPreviewUrl("");
         setProfile(null);
         setProfileForm({
           username: suggestedUsername,
@@ -2141,6 +2183,7 @@ export function RecipesHomeContainer() {
     return () => controller.abort();
   }, [
     isReady,
+    pendingAvatarPreviewUrl,
     session,
     suggestedUsername,
     ui.profile.profileLoadError
@@ -2590,11 +2633,17 @@ export function RecipesHomeContainer() {
     setIsAvatarProcessing(true);
 
     try {
-      const nextAvatarUrl = await createAvatarDataUrl(file);
+      const nextPreviewUrl = URL.createObjectURL(file);
 
+      if (pendingAvatarPreviewUrl) {
+        URL.revokeObjectURL(pendingAvatarPreviewUrl);
+      }
+
+      setPendingAvatarFile(file);
+      setPendingAvatarPreviewUrl(nextPreviewUrl);
       setProfileForm((current) => ({
         ...current,
-        avatarUrl: nextAvatarUrl,
+        avatarUrl: "",
         avatarUrlInput: ""
       }));
     } catch {
@@ -2605,7 +2654,13 @@ export function RecipesHomeContainer() {
   };
 
   const handleRemoveAvatar = () => {
+    if (pendingAvatarPreviewUrl) {
+      URL.revokeObjectURL(pendingAvatarPreviewUrl);
+    }
+
     setProfileError("");
+    setPendingAvatarFile(null);
+    setPendingAvatarPreviewUrl("");
     setProfileForm((current) => ({
       ...current,
       avatarUrl: "",
@@ -2625,11 +2680,30 @@ export function RecipesHomeContainer() {
     setIsProfileSaving(true);
 
     try {
+      let nextAvatarUrl = normalizedProfileAvatarUrl;
+
+      if (pendingAvatarFile) {
+        const uploadUserId = session?.user.id ?? profile?.id;
+
+        if (!uploadUserId) {
+          throw new Error(ui.profile.profileLoadError);
+        }
+
+        const avatarBlob = await createAvatarUploadBlob(pendingAvatarFile);
+        nextAvatarUrl = await uploadProfileAvatarRequest(uploadUserId, avatarBlob);
+      }
+
       const updated = await updateProfileRequest({
         username: normalizedProfileUsername,
-        avatarUrl: normalizedProfileAvatarUrl
+        avatarUrl: nextAvatarUrl
       });
 
+      if (pendingAvatarPreviewUrl) {
+        URL.revokeObjectURL(pendingAvatarPreviewUrl);
+      }
+
+      setPendingAvatarFile(null);
+      setPendingAvatarPreviewUrl("");
       setProfile(updated);
       setProfileForm({
         username: updated.username ?? "",
@@ -4355,7 +4429,13 @@ export function RecipesHomeContainer() {
                           onChange={(event) => {
                             const nextAvatarUrl = event.target.value;
 
+                            if (pendingAvatarPreviewUrl) {
+                              URL.revokeObjectURL(pendingAvatarPreviewUrl);
+                            }
+
                             setProfileError("");
+                            setPendingAvatarFile(null);
+                            setPendingAvatarPreviewUrl("");
                             setProfileForm((current) => ({
                               ...current,
                               avatarUrl: nextAvatarUrl,
