@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -11,6 +12,17 @@ import {
 } from "@/src/lib/server/recipes/recipes-summarize-jobs.repository";
 import { enqueueSummarizeJob } from "@/src/lib/server/recipes/recipes-summarize-queue.service";
 import { ApiError, toErrorResponse } from "@/src/lib/utils/api-error";
+
+function sanitizeSourceUrl(sourceUrl: string): string {
+  try {
+    const parsed = new URL(sourceUrl);
+    parsed.hash = "";
+    parsed.search = "";
+    return parsed.toString();
+  } catch {
+    return sourceUrl;
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,9 +45,27 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to enqueue summarize job";
+      const failureKind = "internal_error" as const;
+
+      Sentry.withScope((scope) => {
+        scope.setTag("service", "web");
+        scope.setTag("summarize.job_id", job.jobId);
+        scope.setTag("summarize.stage", "queued");
+        scope.setTag("summarize.failure_kind", failureKind);
+        scope.setContext("summarizeJob", {
+          failureKind,
+          jobId: job.jobId,
+          sourceUrl: sanitizeSourceUrl(input.sourceUrl),
+          stage: "queued"
+        });
+
+        Sentry.captureException(
+          error instanceof Error ? error : new Error(message)
+        );
+      });
 
       await markSummarizeJobFailed(job.jobId, "QUEUE_ENQUEUE_FAILED", message, {
-        failureKind: "internal_error"
+        failureKind
       });
 
       throw new ApiError(

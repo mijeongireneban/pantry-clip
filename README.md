@@ -108,6 +108,12 @@ Recommended local environment variables:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `NEXT_PUBLIC_SUPABASE_AVATAR_BUCKET` optional, defaults to `avatars`
+- `NEXT_PUBLIC_SENTRY_DSN` for client-side and shared Sentry reporting
+- `SENTRY_DSN` optional override for server-side Sentry reporting
+- `SENTRY_WORKER_DSN` optional override for worker-side Sentry reporting
+- `SENTRY_AUTH_TOKEN` for source map uploads during production builds
+- `SENTRY_ORG` and `SENTRY_PROJECT` for Sentry source map upload configuration
+- `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` optional, defaults to `1` in development and `0.05` in production
 
 ## Background Worker
 

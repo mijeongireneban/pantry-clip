@@ -1,3 +1,4 @@
+import { captureSummarizeJobFailure } from "@/src/lib/server/monitoring/sentry";
 import {
   type ExtractedRecipeContext,
   extractRecipeContext,
@@ -13,6 +14,10 @@ import {
   setSummarizeJobStage,
   storeSummarizeJobEvidence
 } from "@/src/lib/server/recipes/recipes-summarize-jobs.repository";
+import {
+  type SummarizeJobFailureKind,
+  type SummarizeJobStage
+} from "@/src/lib/server/recipes/recipes-summarize-jobs.types";
 import { summarizeRecipeFromContext } from "@/src/lib/server/recipes/recipes-summarizer.service";
 import { ApiError } from "@/src/lib/utils/api-error";
 
@@ -25,12 +30,14 @@ export async function runSummarizeJob(jobId: string): Promise<void> {
 
   await markSummarizeJobExtracting(jobId);
   let context: ExtractedRecipeContext | null = null;
+  let currentStage: SummarizeJobStage = "extracting_metadata";
 
   try {
     context = await extractRecipeContext(
       { sourceUrl: job.sourceUrl },
       {
         onStageChange: async (stage) => {
+          currentStage = stage;
           await setSummarizeJobStage(jobId, stage);
         }
       }
@@ -48,6 +55,7 @@ export async function runSummarizeJob(jobId: string): Promise<void> {
     }
 
     await markSummarizeJobSummarizing(jobId);
+    currentStage = "summarizing";
 
     const draft = await summarizeRecipeFromContext(job.sourceUrl, context);
     await completeSummarizeJob(jobId, context, draft);
@@ -63,9 +71,17 @@ export async function runSummarizeJob(jobId: string): Promise<void> {
 
     const message =
       error instanceof Error ? error.message : "Unexpected summarize job failure";
+    const failureKind: SummarizeJobFailureKind = "internal_error";
+
+    captureSummarizeJobFailure(error, {
+      failureKind,
+      jobId,
+      sourceUrl: job.sourceUrl,
+      stage: currentStage
+    });
 
     await markSummarizeJobFailed(jobId, "SUMMARIZE_FAILED", message, {
-      failureKind: "internal_error"
+      failureKind
     });
   }
 }
